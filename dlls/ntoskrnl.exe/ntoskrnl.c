@@ -894,6 +894,7 @@ NTSTATUS CDECL wine_ntoskrnl_main_loop( HANDLE stop_event )
 {
     struct dispatch_context context;
     NTSTATUS status = STATUS_SUCCESS;
+    NTSTATUS cb_stat = STATUS_SUCCESS;
     WCHAR image_path[MAX_PATH];
     HANDLE handles[2];
     manager = get_device_manager();
@@ -922,6 +923,26 @@ NTSTATUS CDECL wine_ntoskrnl_main_loop( HANDLE stop_event )
             goto done;
         }
 
+        SERVER_START_REQ(get_next_callback_event)
+        {
+            req->manager  = wine_server_obj_handle( manager );
+            wine_server_set_reply(req, image_path, sizeof(image_path));
+            if (!(cb_stat = wine_server_call(req)))
+            {
+                client_tid = reply->client_tid;
+                if (!client_tid)
+                    client_tid = request_thread;
+                NtCurrentTeb()->SystemReserved1[15] = wine_server_get_ptr( reply->client_thread );
+                image_path[wine_server_reply_size(reply) / sizeof(WCHAR)] = 0;
+                KeGetCurrentThread();
+                handle_callback(&reply->cb_data, image_path);
+            }
+        }
+        SERVER_END_REQ;
+
+        if (cb_stat == STATUS_SUCCESS)
+            continue;
+
         SERVER_START_REQ( get_next_device_request )
         {
             req->manager  = wine_server_obj_handle( manager );
@@ -936,6 +957,7 @@ NTSTATUS CDECL wine_ntoskrnl_main_loop( HANDLE stop_event )
                 context.in_size = reply->in_size;
                 client_tid = reply->client_tid;
                 NtCurrentTeb()->SystemReserved1[15] = wine_server_get_ptr( reply->client_thread );
+                KeGetCurrentThread();
             }
             else
             {
@@ -3160,14 +3182,69 @@ void WINAPI PsRevertToSelf(void)
     FIXME("\n");
 }
 
+static struct list process_create_callbacks = LIST_INIT(process_create_callbacks);
+struct process_create_callback
+{
+    struct list entry;
+    PCREATE_PROCESS_NOTIFY_ROUTINE routine;
+};
+
+
+static void dispatch_process_create_callbacks(const krnl_cbdata_t *data)
+{
+    struct process_create_callback *cb;
+
+    LIST_FOR_EACH_ENTRY(cb, &process_create_callbacks, struct process_create_callback, entry)
+    {
+        TRACE("\1Call CREATE_PROCESS_NOTIFY_ROUTINE %p (ppid=%x,pid=%x,create=%u);\n", cb->routine, data->process_life.ppid, data->process_life.pid, data->process_life.create);
+        cb->routine((HANDLE)(ULONG_PTR)data->process_life.ppid, (HANDLE)(ULONG_PTR)data->process_life.pid, data->process_life.create);
+        TRACE("\1Ret  CREATE_PROCESS_NOTIFY_ROUTINE %p;\n", cb->routine);
+    }
+}
+
 
 /***********************************************************************
  *           PsSetCreateProcessNotifyRoutine   (NTOSKRNL.EXE.@)
  */
 NTSTATUS WINAPI PsSetCreateProcessNotifyRoutine( PCREATE_PROCESS_NOTIFY_ROUTINE callback, BOOLEAN remove )
 {
-    FIXME( "stub: %p %d\n", callback, remove );
-    return STATUS_SUCCESS;
+    struct process_create_callback *cb;
+    NTSTATUS status;
+
+    TRACE( "%p %d\n", callback, remove );
+
+    EnterCriticalSection(&callback_cs);
+
+    if (remove)
+    {
+        status = STATUS_INVALID_PARAMETER;
+        LIST_FOR_EACH_ENTRY(cb, &process_create_callbacks, struct process_create_callback, entry)
+        {
+            if (cb->routine == callback)
+            {
+                list_remove(&cb->entry);
+                heap_free(cb);
+                status = STATUS_SUCCESS;
+                if (list_empty(&process_create_callbacks))
+                    callback_subscribe(SERVER_CALLBACK_PROC_LIFE, TRUE);
+                break;
+            }
+        }
+    }
+    else
+    {
+        cb = heap_alloc(sizeof(*cb));
+        cb->routine = callback;
+
+        if (list_empty(&process_create_callbacks))
+            callback_subscribe(SERVER_CALLBACK_PROC_LIFE, FALSE);
+        list_add_tail(&process_create_callbacks, &cb->entry);
+        status = STATUS_SUCCESS;
+    }
+
+    LeaveCriticalSection(&callback_cs);
+
+    return status;
 }
 
 
