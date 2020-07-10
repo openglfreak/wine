@@ -48,7 +48,7 @@ my %formats =
     "apc_call_t"    => [  48,  8,  "&dump_apc_call" ],
     "apc_result_t"  => [  40,  8,  "&dump_apc_result" ],
     "async_data_t"  => [  40,  8,  "&dump_async_data" ],
-    "irp_params_t"  => [  32,  8,  "&dump_irp_params" ],
+    "irp_params_t"  => [  40,  8,  "&dump_irp_params" ],
     "luid_t"        => [  8,   4,  "&dump_luid" ],
     "generic_map_t" => [  16,  4,  "&dump_generic_map" ],
     "ioctl_code_t"  => [  4,   4,  "&dump_ioctl_code" ],
@@ -62,7 +62,7 @@ my @asserts = ();
 
 my @trace_lines = ();
 
-my $max_req_size = 64;
+my $max_req_size = 72;
 
 my $warnings = scalar(@ARGV) && $ARGV[0] eq "-w";
 

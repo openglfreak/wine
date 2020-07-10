@@ -842,6 +842,49 @@ static void unload_driver( struct wine_rb_entry *entry, void *context )
     CloseServiceHandle( (void *)service_handle );
 }
 
+static HANDLE manager;
+
+DECLARE_CRITICAL_SECTION(callback_cs);
+
+NTSTATUS callback_subscribe(enum kernel_callback_type type, BOOL unsub)
+{
+    static enum kernel_callback_type current_types;
+    NTSTATUS status;
+
+    EnterCriticalSection(&callback_cs);
+
+    if (unsub)
+        current_types &= ~type;
+    else
+        current_types |= type;
+
+    SERVER_START_REQ(callback_subscribe)
+    {
+        req->manager = wine_server_obj_handle( manager );
+        req->callback_mask = current_types;
+        status = wine_server_call(req);
+    }
+    SERVER_END_REQ;
+
+    LeaveCriticalSection(&callback_cs);
+
+    return status;
+}
+
+static void dispatch_process_create_callbacks(const krnl_cbdata_t *data);
+void handle_callback(const krnl_cbdata_t *data, const WCHAR *image_path)
+{
+    TRACE("dispatch callback %u\n", data->cb_type);
+
+    EnterCriticalSection(&callback_cs);
+    switch(data->cb_type)
+    {
+        case SERVER_CALLBACK_PROC_LIFE: dispatch_process_create_callbacks(data); break;
+        default:;
+    }
+    LeaveCriticalSection(&callback_cs);
+}
+
 PEPROCESS PsInitialSystemProcess = NULL;
 
 /***********************************************************************
@@ -849,10 +892,11 @@ PEPROCESS PsInitialSystemProcess = NULL;
  */
 NTSTATUS CDECL wine_ntoskrnl_main_loop( HANDLE stop_event )
 {
-    HANDLE manager = get_device_manager();
     struct dispatch_context context;
     NTSTATUS status = STATUS_SUCCESS;
+    WCHAR image_path[MAX_PATH];
     HANDLE handles[2];
+    manager = get_device_manager();
 
     context.handle  = NULL;
     context.irp     = NULL;
@@ -2328,6 +2372,8 @@ static void *create_thread_object( HANDLE handle )
         }
     }
 
+    InitializeListHead(&thread->ApcListHead[KernelMode]);
+    InitializeListHead(&thread->ApcListHead[UserMode]);
 
     return thread;
 }
