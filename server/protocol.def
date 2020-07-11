@@ -3498,6 +3498,17 @@ typedef union
         client_ptr_t base;
         mem_size_t size;
     } image_life;
+    struct
+    {
+        int cb_type;
+        enum operation_type op_type;
+        unsigned int access;
+        unsigned int status;
+        process_id_t source_pid;
+        process_id_t target_pid;
+        obj_handle_t object;
+        unsigned int padding;
+    } handle_event;
 } krnl_cbdata_t;
 
 enum kernel_callback_type
@@ -3505,6 +3516,7 @@ enum kernel_callback_type
     SERVER_CALLBACK_PROC_LIFE = 0x1,
     SERVER_CALLBACK_THRD_LIFE = 0x2,
     SERVER_CALLBACK_IMAGE_LIFE = 0x4,
+    SERVER_CALLBACK_HANDLE_EVENT = 0x8
 };
 
 @REQ(get_next_callback_event)
