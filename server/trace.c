@@ -434,6 +434,10 @@ static void dump_krnl_cbdata( const char *prefix, const krnl_cbdata_t *input )
         fprintf(stderr, "%s{type=PROCESS_%s,pid=%04x,ppid=%04x}",
                 prefix, input->process_life.create ? "CREATE" : "TERMINATE", input->process_life.pid, input->process_life.ppid);
         break;
+    case SERVER_CALLBACK_THRD_LIFE:
+        fprintf(stderr, "%s{type=THREAD_%s,pid=%04x,tid=%04x}",
+                prefix, input->thread_life.create ? "CREATE" : "TERMINATE", input->thread_life.pid, input->thread_life.tid);
+        break;
     }
 }
 

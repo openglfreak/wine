@@ -1695,6 +1695,7 @@ void server_init_process_done(void)
 void server_init_thread( void *entry_point, BOOL *suspend )
 {
     int reply_pipe = init_thread_pipe();
+    HANDLE processed_event;
 
     SERVER_START_REQ( init_thread )
     {
@@ -1707,10 +1708,18 @@ void server_init_thread( void *entry_point, BOOL *suspend )
         *suspend = reply->suspend;
         NtCurrentTeb()->ClientId.UniqueProcess = ULongToHandle(reply->pid);
         NtCurrentTeb()->ClientId.UniqueThread  = ULongToHandle(reply->tid);
+        processed_event   = reply->processed_event;
     }
     SERVER_END_REQ;
     close( reply_pipe );
     init_teb64( NtCurrentTeb() );
+
+    if (processed_event)
+    {
+        NtWaitForSingleObject(processed_event, FALSE, NULL);
+        ERR("waited for thread start\n");
+        NtClose(processed_event);
+    }
 }
 
 
