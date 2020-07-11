@@ -1101,6 +1101,8 @@ typedef struct
     mod_handle_t base;         /* base address */
     client_ptr_t name;         /* ptr to ptr to name (in process addr space) */
     VARARG(filename,unicode_str); /* file name of dll */
+@REPLY
+    obj_handle_t processed_event; /* signals when "kernel" callbacks are done with it */
 @END
 
 
@@ -3516,12 +3518,20 @@ typedef union
         process_id_t pid;
         thread_id_t tid;
     } thread_life;
+    struct
+    {
+        int cb_type;
+        process_id_t pid;
+        client_ptr_t base;
+        mem_size_t size;
+    } image_life;
 } krnl_cbdata_t;
 
 enum kernel_callback_type
 {
     SERVER_CALLBACK_PROC_LIFE = 0x1,
     SERVER_CALLBACK_THRD_LIFE = 0x2,
+    SERVER_CALLBACK_IMAGE_LIFE = 0x4,
 };
 
 @REQ(get_next_callback_event)

@@ -825,7 +825,8 @@ static inline struct process_dll *find_process_dll( struct process *process, mod
 
 /* add a dll to a process list */
 static struct process_dll *process_load_dll( struct process *process, mod_handle_t base,
-                                             const WCHAR *filename, data_size_t name_len )
+                                             const WCHAR *filename, data_size_t name_len,
+                                             struct object **done_event )
 {
     struct process_dll *dll;
 
@@ -838,6 +839,9 @@ static struct process_dll *process_load_dll( struct process *process, mod_handle
 
     if ((dll = mem_alloc( sizeof(*dll) )))
     {
+        krnl_cbdata_t cbdata;
+        struct unicode_str filename_str = {filename, name_len};
+
         dll->base = base;
         dll->filename = NULL;
         dll->namelen  = name_len;
@@ -847,6 +851,13 @@ static struct process_dll *process_load_dll( struct process *process, mod_handle
             return NULL;
         }
         list_add_tail( &process->dlls, &dll->entry );
+
+        cbdata.cb_type = SERVER_CALLBACK_IMAGE_LIFE;
+        cbdata.image_life.pid = current->process->id;
+        cbdata.image_life.base = base;
+        cbdata.image_life.size = 0;
+        queue_callback(&cbdata, filename ? &filename_str : NULL, done_event);
+
     }
     return dll;
 }
