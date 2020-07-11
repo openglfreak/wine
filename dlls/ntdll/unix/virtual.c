@@ -2333,6 +2333,7 @@ static NTSTATUS virtual_map_section( HANDLE handle, PVOID *addr_ptr, unsigned sh
     HANDLE shared_file;
     LARGE_INTEGER offset;
     sigset_t sigset;
+    HANDLE processed_event;
 
     offset.QuadPart = offset_ptr ? offset_ptr->QuadPart : 0;
 
@@ -2451,8 +2452,15 @@ static NTSTATUS virtual_map_section( HANDLE handle, PVOID *addr_ptr, unsigned sh
             req->size    = size;
             req->start   = offset.QuadPart;
             res = wine_server_call( req );
+            processed_event = wine_server_ptr_handle(reply->processed_event);
         }
         SERVER_END_REQ;
+    }
+
+    if (processed_event)
+    {
+        NtWaitForSingleObject(processed_event, FALSE, NULL);
+        NtClose(processed_event);
     }
 
     if (res >= 0)
@@ -2615,6 +2623,7 @@ NTSTATUS virtual_create_builtin_view( void *module, pe_image_info_t *info )
     struct file_view *view;
     void *base = wine_server_get_ptr( info->base );
     int i;
+    HANDLE processed_event;
 
     server_enter_uninterrupted_section( &virtual_mutex, &sigset );
     status = create_view( &view, base, size, SEC_IMAGE | SEC_FILE | VPROT_SYSTEM |
@@ -2643,8 +2652,15 @@ NTSTATUS virtual_create_builtin_view( void *module, pe_image_info_t *info )
             req->size = size;
             wine_server_add_data( req, info, sizeof(*info) );
             status = wine_server_call( req );
+            processed_event = wine_server_ptr_handle(reply->processed_event);
         }
         SERVER_END_REQ;
+
+        if (processed_event)
+        {
+            NtWaitForSingleObject(processed_event, FALSE, NULL);
+            NtClose(processed_event);
+        }
 
         if (status >= 0)
         {

@@ -872,6 +872,7 @@ NTSTATUS callback_subscribe(enum kernel_callback_type type, BOOL unsub)
 
 static void dispatch_process_create_callbacks(const krnl_cbdata_t *data);
 static void dispatch_thread_create_callbacks(const krnl_cbdata_t *data);
+static void dispatch_image_load_callbacks(const krnl_cbdata_t *data, const WCHAR *image_path);
 void handle_callback(const krnl_cbdata_t *data, const WCHAR *image_path)
 {
     TRACE("dispatch callback %u\n", data->cb_type);
@@ -881,6 +882,7 @@ void handle_callback(const krnl_cbdata_t *data, const WCHAR *image_path)
     {
         case SERVER_CALLBACK_PROC_LIFE: dispatch_process_create_callbacks(data); break;
         case SERVER_CALLBACK_THRD_LIFE: dispatch_thread_create_callbacks(data); break;
+        case SERVER_CALLBACK_IMAGE_LIFE: dispatch_image_load_callbacks(data, image_path); break;
         default:;
     }
     LeaveCriticalSection(&callback_cs);
@@ -3422,6 +3424,37 @@ NTSTATUS WINAPI IoWMIOpenBlock(LPCGUID guid, ULONG desired_access, PVOID *data_b
 {
     FIXME("(%p %u %p) stub\n", guid, desired_access, data_block_obj);
     return STATUS_NOT_IMPLEMENTED;
+}
+
+static struct list image_load_callbacks = LIST_INIT(image_load_callbacks);
+struct image_load_callback
+{
+    struct list entry;
+    PLOAD_IMAGE_NOTIFY_ROUTINE routine;
+};
+
+void dispatch_image_load_callbacks(const krnl_cbdata_t *data, const WCHAR *image_path)
+{
+    struct image_load_callback *cb;
+    UNICODE_STRING image_path_us;
+    IMAGE_INFO info;
+
+    RtlCreateUnicodeString(&image_path_us, image_path);
+
+    info.u.s.ImageAddressingMode = 3;
+    info.u.s.SystemModeImage = data->image_life.pid == GetCurrentProcessId();
+    info.u.s.ImageMappedToAllPids = 0;
+    info.u.s.ExtendedInfoPresent = 0;
+    info.ImageBase = wine_server_get_ptr(data->image_life.base);
+    info.ImageSize = data->image_life.size;
+    info.ImageSectionNumber = 0;
+
+    LIST_FOR_EACH_ENTRY(cb, &image_load_callbacks, struct image_load_callback, entry)
+    {
+        TRACE("\1Call LOAD_IMAGE_NOTIFY_ROUTINE %p (dll=%s,pid=%x,info=%p)\n", cb->routine, debugstr_us(&image_path_us), data->image_life.pid, &info);
+        cb->routine(&image_path_us, (HANDLE)(ULONG_PTR)data->image_life.pid, &info);
+        TRACE("\1Ret  LOAD_IMAGE_NOTIFY_ROUTINE %p\n", cb->routine);
+    }
 }
 
 /*****************************************************

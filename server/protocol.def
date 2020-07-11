@@ -1564,6 +1564,8 @@ enum server_fd_type
     mem_size_t   size;          /* view size */
     file_pos_t   start;         /* start offset in mapping */
     VARARG(image,pe_image_info);/* image info for .so builtins */
+@REPLY
+    obj_handle_t processed_event; /* signals when "kernel" callbacks are done with it */
 @END
 
 
@@ -3489,12 +3491,20 @@ typedef union
         process_id_t pid;
         thread_id_t tid;
     } thread_life;
+    struct
+    {
+        int cb_type;
+        process_id_t pid;
+        client_ptr_t base;
+        mem_size_t size;
+    } image_life;
 } krnl_cbdata_t;
 
 enum kernel_callback_type
 {
     SERVER_CALLBACK_PROC_LIFE = 0x1,
     SERVER_CALLBACK_THRD_LIFE = 0x2,
+    SERVER_CALLBACK_IMAGE_LIFE = 0x4,
 };
 
 @REQ(get_next_callback_event)

@@ -37,6 +37,7 @@
 #include "winternl.h"
 #include "ddk/wdm.h"
 
+#include "device.h"
 #include "file.h"
 #include "handle.h"
 #include "thread.h"
@@ -351,12 +352,16 @@ struct memory_view *get_exe_view( struct process *process )
 }
 
 /* add a view to the process list */
-static void add_process_view( struct thread *thread, struct memory_view *view )
+static void add_process_view( struct thread *thread, struct memory_view *view,
+                              struct object **done_event )
 {
     struct process *process = thread->process;
 
     if (view->flags & SEC_IMAGE)
     {
+        krnl_cbdata_t cbdata;
+        struct unicode_str filename_str;
+
         if (is_process_init_done( process ))
             generate_debug_event( thread, DbgLoadDllStateChange, view );
         else if (!(view->image.image_charact & IMAGE_FILE_DLL))
@@ -365,6 +370,12 @@ static void add_process_view( struct thread *thread, struct memory_view *view )
             list_add_head( &process->views, &view->entry );
             return;
         }
+
+        cbdata.cb_type = SERVER_CALLBACK_IMAGE_LIFE;
+        cbdata.image_life.pid = current->process->id;
+        cbdata.image_life.base = view->base;
+        cbdata.image_life.size = view->size;
+        queue_callback( &cbdata, get_view_nt_name(view, &filename_str) ? &filename_str : NULL, done_event );
     }
     list_add_tail( &process->views, &view->entry );
 }
@@ -1160,6 +1171,7 @@ DECL_HANDLER(map_view)
 {
     struct mapping *mapping = NULL;
     struct memory_view *view;
+    struct object *done_event = NULL;
 
     if (!req->size || (req->base & page_mask) || req->base + req->size < req->base)  /* overflow */
     {
@@ -1185,8 +1197,8 @@ DECL_HANDLER(map_view)
         view->start = req->start;
         view->flags = SEC_IMAGE;
         memcpy( &view->image, get_req_data(), min( sizeof(view->image), get_req_data_size() ));
-        add_process_view( current, view );
-        return;
+        add_process_view( current, view, &done_event );
+        goto done;
     }
 
     if (!(mapping = get_mapping_obj( current->process, req->mapping, req->access ))) return;
@@ -1217,13 +1229,27 @@ DECL_HANDLER(map_view)
         view->committed = mapping->committed ? (struct ranges *)grab_object( mapping->committed ) : NULL;
         view->shared    = mapping->shared ? (struct shared_map *)grab_object( mapping->shared ) : NULL;
         if (view->flags & SEC_IMAGE) view->image = mapping->image;
-        add_process_view( current, view );
+        add_process_view( current, view, &done_event );
         if (view->flags & SEC_IMAGE && view->base != mapping->image.base)
             set_error( STATUS_IMAGE_NOT_AT_BASE );
     }
 
 done:
-    release_object( mapping );
+    if (mapping) release_object( mapping );
+    if (done_event)
+    {
+        if (is_process_init_done( current->process ))
+        {
+            reply->processed_event = alloc_handle(current->process, done_event, SYNCHRONIZE, 0);
+            release_object(done_event);
+        }
+        else
+        {
+            if (current->process->callback_init_event)
+                release_object(current->process->callback_init_event);
+            current->process->callback_init_event = done_event;
+        }
+    }
 }
 
 /* unmap a memory view from the current process */
