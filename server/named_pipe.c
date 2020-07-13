@@ -158,7 +158,7 @@ static struct object *pipe_server_lookup_name( struct object *obj, struct unicod
 static struct object *pipe_server_open_file( struct object *obj, unsigned int access,
                                              unsigned int sharing, unsigned int options );
 static void pipe_server_destroy( struct object *obj);
-static int pipe_server_ioctl( struct fd *fd, ioctl_code_t code, struct async *async );
+static int pipe_server_ioctl( struct fd *fd, ioctl_code_t code, client_ptr_t in_buf, client_ptr_t out_buf, struct async *async );
 
 static const struct object_ops pipe_server_ops =
 {
@@ -202,7 +202,7 @@ static const struct fd_ops pipe_server_fd_ops =
 
 /* client end functions */
 static void pipe_client_dump( struct object *obj, int verbose );
-static int pipe_client_ioctl( struct fd *fd, ioctl_code_t code, struct async *async );
+static int pipe_client_ioctl( struct fd *fd, ioctl_code_t code, client_ptr_t in_buf, client_ptr_t out_buf, struct async *async );
 
 static const struct object_ops pipe_client_ops =
 {
@@ -279,7 +279,7 @@ static const struct object_ops named_pipe_device_ops =
 static void named_pipe_device_file_dump( struct object *obj, int verbose );
 static struct fd *named_pipe_device_file_get_fd( struct object *obj );
 static WCHAR *named_pipe_device_file_get_full_name( struct object *obj, data_size_t *len );
-static int named_pipe_device_ioctl( struct fd *fd, ioctl_code_t code, struct async *async );
+static int named_pipe_device_ioctl( struct fd *fd, ioctl_code_t code, client_ptr_t in_buf, client_ptr_t out_buf, struct async *async );
 static enum server_fd_type named_pipe_device_file_get_fd_type( struct fd *fd );
 static void named_pipe_device_file_destroy( struct object *obj );
 
@@ -1113,7 +1113,7 @@ static int pipe_end_get_connection_attribute( struct pipe_end *pipe_end )
     return 1;
 }
 
-static int pipe_end_ioctl( struct pipe_end *pipe_end, ioctl_code_t code, struct async *async )
+static int pipe_end_ioctl( struct pipe_end *pipe_end, ioctl_code_t code, client_ptr_t in_buf, client_ptr_t out_buf, struct async *async )
 {
     switch(code)
     {
@@ -1127,11 +1127,11 @@ static int pipe_end_ioctl( struct pipe_end *pipe_end, ioctl_code_t code, struct 
         return pipe_end_transceive( pipe_end, async );
 
     default:
-        return default_fd_ioctl( pipe_end->fd, code, async );
+        return default_fd_ioctl( pipe_end->fd, code, in_buf, out_buf, async );
     }
 }
 
-static int pipe_server_ioctl( struct fd *fd, ioctl_code_t code, struct async *async )
+static int pipe_server_ioctl( struct fd *fd, ioctl_code_t code, client_ptr_t in_buf, client_ptr_t out_buf, struct async *async )
 {
     struct pipe_server *server = get_fd_user( fd );
 
@@ -1198,11 +1198,11 @@ static int pipe_server_ioctl( struct fd *fd, ioctl_code_t code, struct async *as
         return 1;
 
     default:
-        return pipe_end_ioctl( &server->pipe_end, code, async );
+        return pipe_end_ioctl( &server->pipe_end, code, in_buf, out_buf, async );
     }
 }
 
-static int pipe_client_ioctl( struct fd *fd, ioctl_code_t code, struct async *async )
+static int pipe_client_ioctl( struct fd *fd, ioctl_code_t code, client_ptr_t in_buf, client_ptr_t out_buf, struct async *async )
 {
     struct pipe_end *client = get_fd_user( fd );
 
@@ -1213,7 +1213,7 @@ static int pipe_client_ioctl( struct fd *fd, ioctl_code_t code, struct async *as
         return 0;
 
     default:
-        return pipe_end_ioctl( client, code, async );
+        return pipe_end_ioctl( client, code, in_buf, out_buf, async );
     }
 }
 
@@ -1331,7 +1331,7 @@ static struct object *named_pipe_open_file( struct object *obj, unsigned int acc
     return &client->obj;
 }
 
-static int named_pipe_device_ioctl( struct fd *fd, ioctl_code_t code, struct async *async )
+static int named_pipe_device_ioctl( struct fd *fd, ioctl_code_t code, client_ptr_t in_buf, client_ptr_t out_buf, struct async *async )
 {
     struct named_pipe_device *device = get_fd_user( fd );
 
@@ -1368,7 +1368,7 @@ static int named_pipe_device_ioctl( struct fd *fd, ioctl_code_t code, struct asy
         }
 
     default:
-        return default_fd_ioctl( fd, code, async );
+        return default_fd_ioctl( fd, code, in_buf, out_buf, async );
     }
 }
 
