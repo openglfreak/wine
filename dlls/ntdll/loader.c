@@ -3662,6 +3662,7 @@ void WINAPI LdrInitializeThunk( CONTEXT *context, ULONG_PTR unknown2, ULONG_PTR 
     WINE_MODREF *wm;
     void **entry;
     LPCWSTR load_path = NtCurrentTeb()->Peb->ProcessParameters->DllPath.Buffer;
+    LARGE_INTEGER zero;
 
 #ifdef __i386__
     entry = (void **)&context->Eax;
@@ -3690,6 +3691,8 @@ void WINAPI LdrInitializeThunk( CONTEXT *context, ULONG_PTR unknown2, ULONG_PTR 
     wm = get_modref( NtCurrentTeb()->Peb->ImageBaseAddress );
     assert( wm );
 
+    zero.QuadPart = 0;
+    NtDelayExecution( TRUE, &zero );
     if (!imports_fixup_done)
     {
         actctx_init();
