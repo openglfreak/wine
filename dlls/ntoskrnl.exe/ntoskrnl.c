@@ -2540,6 +2540,9 @@ static void *create_process_object( HANDLE handle )
     else
         process->create_time = 0;
 
+    if (!(IsWow64Process(handle, &process->wow64)))
+        process->wow64 = FALSE;
+
     SERVER_START_REQ(get_dll_info)
     {
         req->handle = wine_server_obj_handle(handle);
@@ -4717,7 +4720,9 @@ NTSTATUS WINAPI DbgQueryDebugFilterState(ULONG component, ULONG level)
  */
 PVOID WINAPI PsGetProcessWow64Process(PEPROCESS process)
 {
-    FIXME("stub: %p\n", process);
+    TRACE("%p\n", process);
+    if (process->wow64)
+        return process->info.PebBaseAddress;
     return NULL;
 }
 
