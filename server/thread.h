@@ -31,6 +31,7 @@ struct thread_apc;
 struct debug_obj;
 struct debug_event;
 struct msg_queue;
+struct startup_info;
 
 enum run_state
 {
@@ -96,6 +97,7 @@ struct thread
     struct timeout_user   *exit_poll;     /* poll if the thread/process has exited already */
     struct object         *callback_init_event;
     struct process *       attached_process;
+    struct startup_info   *startup_info;
 };
 
 extern struct thread *current;
