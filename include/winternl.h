@@ -1305,6 +1305,7 @@ typedef enum _SYSTEM_INFORMATION_CLASS {
     SystemSuperfetchInformation = 79,
     SystemMemoryListInformation = 80,
     SystemFileCacheInformationEx = 81,
+    SystemBootEnvironmentInformation = 90,
     SystemDynamicTimeZoneInformation = 102,
     SystemCodeIntegrityInformation = 103,
     SystemLogicalProcessorInformationEx = 107,
@@ -2070,6 +2071,23 @@ typedef struct _SYSTEM_FIRMWARE_TABLE_INFORMATION
     ULONG TableBufferLength;
     UCHAR TableBuffer[1];
 } SYSTEM_FIRMWARE_TABLE_INFORMATION, *PSYSTEM_FIRMWARE_TABLE_INFORMATION;
+
+typedef enum _FIRMWARE_TYPE
+{
+    FirmwareTypeUnknown,
+    FirmwareTypeBios,
+    FirmwareTypeUefi,
+    FirmwareTypeMax,
+} FIRMWARE_TYPE, *PFIRMWARE_TYPE;
+
+/* System Information Class 0x5A */
+
+typedef struct _SYSTEM_BOOT_ENVIRONMENT_INFORMATION
+{
+    GUID BootIdentifier;
+    FIRMWARE_TYPE FirmwareType;
+    ULONGLONG BootFlags;
+} SYSTEM_BOOT_ENVIRONMENT_INFORMATION, *PSYSTEM_BOOT_ENVIRONMENT_INFORMATION;
 
 typedef struct _TIME_FIELDS
 {   CSHORT Year;
