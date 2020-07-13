@@ -482,6 +482,30 @@ LONG CALLBACK vectored_handler( EXCEPTION_POINTERS *ptrs )
 
 WINE_DEFAULT_DEBUG_CHANNEL(int);
 
+/* keep in sync with dlls/ntdll/thread.c:thread_init */
+static const BYTE *wine_user_shared_data = (BYTE *)0x7ffe0000;
+static const BYTE *user_shared_data      = (BYTE *)0xfffff78000000000;
+
+static DWORD64 current_rip;
+
+int read_emulated_memory(void *buf, BYTE *addr, unsigned int length)
+{
+    SIZE_T offset;
+
+    TRACE("(%p, %u)\n", addr, length);
+
+    offset = addr - user_shared_data;
+    if (offset + length <= sizeof(KSHARED_USER_DATA))
+    {
+        WARN("user_shared_data accessed at offset %x @ %016llx\n", offset, current_rip);
+        memcpy(buf, wine_user_shared_data + offset, length);
+        return 1;
+    }
+
+    ERR("Failed to emulate memory access to %p+%u from %016llx\n", addr, length, current_rip);
+    return 0;
+}
+
 #define REX_B   1
 #define REX_X   2
 #define REX_R   4
@@ -496,10 +520,6 @@ WINE_DEFAULT_DEBUG_CHANNEL(int);
 #define SIB_SS( sib, rex )      ((sib) >> 6)
 #define SIB_INDEX( sib, rex )   (((sib) >> 3) & 7) | (((rex) & REX_X) ? 8 : 0)
 #define SIB_BASE( sib, rex )    (((sib) & 7) | (((rex) & REX_B) ? 8 : 0))
-
-/* keep in sync with dlls/ntdll/thread.c:thread_init */
-static const BYTE *wine_user_shared_data = (BYTE *)0x7ffe0000;
-static const BYTE *user_shared_data      = (BYTE *)0xfffff78000000000;
 
 static inline DWORD64 *get_int_reg( CONTEXT *context, int index )
 {
@@ -858,28 +878,22 @@ static DWORD emulate_instruction( EXCEPTION_RECORD *rec, CONTEXT *context )
         BYTE *data = INSTR_GetOperandAddr( context, instr + 1, prefixlen + 1, long_addr,
                                            rex, segprefix, &len );
         unsigned int data_size = (*instr == 0x8b) ? get_op_size( long_op, rex ) : 1;
-        SIZE_T offset = data - user_shared_data;
-
-        if (offset <= KSHARED_USER_DATA_PAGE_SIZE - data_size)
+        BYTE temp[8];
+        if (read_emulated_memory(temp, data, data_size))
         {
-            TRACE("USD offset %#x at %p.\n", (unsigned int)offset, (void *)context->Rip);
             switch (*instr)
             {
                 case 0x8a:
-                    store_reg_byte( context, instr[1], wine_user_shared_data + offset,
-                            rex, INSTR_OP_MOV );
+                    store_reg_byte( context, instr[1], temp, rex, INSTR_OP_MOV );
                     break;
                 case 0x8b:
-                    store_reg_word( context, instr[1], wine_user_shared_data + offset,
-                            long_op, rex, INSTR_OP_MOV );
+                    store_reg_word( context, instr[1], temp, long_op, rex, INSTR_OP_MOV );
                     break;
                 case 0x0b:
-                    store_reg_word( context, instr[1], wine_user_shared_data + offset,
-                            long_op, rex, INSTR_OP_OR );
+                    store_reg_word( context, instr[1], temp, long_op, rex, INSTR_OP_OR );
                     break;
                 case 0x33:
-                    store_reg_word( context, instr[1], wine_user_shared_data + offset,
-                            long_op, rex, INSTR_OP_XOR );
+                    store_reg_word( context, instr[1], temp, long_op, rex, INSTR_OP_XOR );
                     break;
             }
             context->Rip += prefixlen + len + 1;
@@ -893,13 +907,12 @@ static DWORD emulate_instruction( EXCEPTION_RECORD *rec, CONTEXT *context )
     {
         BYTE *data = (BYTE *)(long_addr ? *(DWORD64 *)(instr + 1) : *(DWORD *)(instr + 1));
         unsigned int data_size = (*instr == 0xa1) ? get_op_size( long_op, rex ) : 1;
-        SIZE_T offset = data - user_shared_data;
+        BYTE temp[8];
         len = long_addr ? sizeof(DWORD64) : sizeof(DWORD);
 
-        if (offset <= KSHARED_USER_DATA_PAGE_SIZE - data_size)
+        if (read_emulated_memory(temp, data, data_size))
         {
-            TRACE("USD offset %#x at %p.\n", (unsigned int)offset, (void *)context->Rip);
-            memcpy( &context->Rax, wine_user_shared_data + offset, data_size );
+            memcpy( &context->Rax, temp, data_size );
             context->Rip += prefixlen + len + 1;
             return ExceptionContinueExecution;
         }
