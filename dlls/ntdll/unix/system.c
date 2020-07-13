@@ -2740,6 +2740,13 @@ NTSTATUS WINAPI NtQuerySystemInformation( SYSTEM_INFORMATION_CLASS class,
             break;
         }
 
+        if (scii->Length < sizeof(SYSTEM_CODEINTEGRITY_INFORMATION))
+        {
+            ret = STATUS_INFO_LENGTH_MISMATCH;
+            break;
+        }
+
+        scii->Length = sizeof(SYSTEM_CODEINTEGRITY_INFORMATION);
         scii->CodeIntegrityOptions = CODEINTEGRITY_OPTION_ENABLED;
         break;
     }
