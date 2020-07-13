@@ -4063,6 +4063,13 @@ NTSTATUS WINAPI IoWMIOpenBlock(LPCGUID guid, ULONG desired_access, PVOID *data_b
     return STATUS_NOT_IMPLEMENTED;
 }
 
+NTSTATUS WINAPI IoWMIQueryAllData(PVOID data_block_obj, PULONG buf_size, PVOID buf)
+{
+    *buf_size = 0;
+
+    return STATUS_SUCCESS;
+}
+
 static struct list image_load_callbacks = LIST_INIT(image_load_callbacks);
 struct image_load_callback
 {
