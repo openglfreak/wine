@@ -355,11 +355,10 @@ NTSTATUS WINAPI ObReferenceObjectByHandle( HANDLE handle, ACCESS_MASK access,
 
     TRACE( "%p %x %p %d %p %p\n", handle, access, type, mode, ptr, info );
 
-    if (mode != KernelMode)
-    {
-        FIXME("UserMode access not implemented\n");
-        return STATUS_NOT_IMPLEMENTED;
-    }
+    if (mode != KernelMode && (ULONG_PTR)handle & KERNEL_HANDLE_FLAG)
+        return STATUS_ACCESS_DENIED;
+    if (mode != UserMode && !((ULONG_PTR)handle & KERNEL_HANDLE_FLAG))
+        return STATUS_INVALID_PARAMETER;
 
     status = kernel_object_from_handle( handle, type, ptr );
     if (!status) ObReferenceObject( *ptr );
@@ -377,13 +376,10 @@ NTSTATUS WINAPI ObOpenObjectByPointer( void *obj, ULONG attr, ACCESS_STATE *acce
 
     TRACE( "%p %x %p %x %p %d %p\n", obj, attr, access_state, access, type, mode, handle );
 
-    if (mode != KernelMode)
-    {
-        FIXME( "UserMode access not implemented\n" );
-        return STATUS_NOT_IMPLEMENTED;
-    }
+    if (mode == UserMode && attr & OBJ_KERNEL_HANDLE)
+        return STATUS_PRIVILEGE_NOT_HELD;
 
-    if (attr & ~OBJ_KERNEL_HANDLE) FIXME( "attr %#x not supported\n", attr );
+    if (mode == KernelMode && attr & ~OBJ_KERNEL_HANDLE) FIXME( "attr %#x not supported\n", attr );
     if (access_state) FIXME( "access_state not implemented\n" );
 
     if (type && ObGetObjectType( obj ) != type) return STATUS_OBJECT_TYPE_MISMATCH;
@@ -393,6 +389,7 @@ NTSTATUS WINAPI ObOpenObjectByPointer( void *obj, ULONG attr, ACCESS_STATE *acce
         req->manager  = wine_server_obj_handle( get_device_manager() );
         req->user_ptr = wine_server_client_ptr( obj );
         req->access   = access;
+        req->attributes = attr;
         if (!(status = wine_server_call( req )))
             *handle = wine_server_ptr_handle( reply->handle );
     }
@@ -3005,9 +3002,16 @@ NTSTATUS WINAPI ObReferenceObjectByPointer(void *obj, ACCESS_MASK access,
                                            POBJECT_TYPE type,
                                            KPROCESSOR_MODE mode)
 {
-    FIXME("(%p, %x, %p, %d): stub\n", obj, access, type, mode);
+    TRACE("(%p, %x, %p, %d)\n", obj, access, type, mode);
 
-    return STATUS_NOT_IMPLEMENTED;
+    if (mode != KernelMode)
+        FIXME("Not checking access mask\n");
+
+    if (type && ObGetObjectType(obj) != type)
+        return STATUS_OBJECT_TYPE_MISMATCH;
+
+    ObReferenceObject(obj);
+    return STATUS_SUCCESS;
 }
 
 
@@ -3786,7 +3790,7 @@ NTSTATUS WINAPI ObQueryNameString( void *object, OBJECT_NAME_INFORMATION *name, 
 
     TRACE("object %p, name %p, size %u, ret_size %p.\n", object, name, size, ret_size);
 
-    if ((ret = ObOpenObjectByPointer( object, 0, NULL, 0, NULL, KernelMode, &handle )))
+    if ((ret = ObOpenObjectByPointer( object, OBJ_KERNEL_HANDLE, NULL, 0, NULL, KernelMode, &handle )))
         return ret;
     ret = NtQueryObject( handle, ObjectNameInformation, name, size, ret_size );
 

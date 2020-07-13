@@ -543,6 +543,7 @@ struct process *create_process( int fd, struct process *parent, int inherit_all,
     process->is_system       = 0;
     process->debug_children  = 1;
     process->is_terminating  = 0;
+    process->is_kernel       = 0;
     process->job             = NULL;
     process->console         = NULL;
     process->startup_state   = STARTUP_IN_PROGRESS;
@@ -1400,6 +1401,7 @@ DECL_HANDLER(get_startup_info)
 /* signal the end of the process initialization */
 DECL_HANDLER(init_process_done)
 {
+    static const WCHAR winedeviceW[] = {'w','i','n','e','d','e','v','i','c','e','.','e','x','e'};
     struct process_dll *dll;
     struct process *process = current->process;
     struct memory_view *view;
@@ -1427,6 +1429,9 @@ DECL_HANDLER(init_process_done)
 
     process->start_time = current_time;
     current->entry_point = image_info->entry_point;
+
+    if (dll->filename && dll->namelen >= sizeof(winedeviceW) && !memcmp(dll->filename + dll->namelen / sizeof(WCHAR) - 1, winedeviceW, sizeof(winedeviceW)))
+        process->is_kernel = 1;
 
     init_process_tracing( process );
     generate_startup_debug_events( process );
