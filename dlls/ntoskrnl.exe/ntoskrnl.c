@@ -5377,6 +5377,22 @@ NTSTATUS WINAPI KdEnableDebugger(void)
     return STATUS_DEBUGGER_INACTIVE;
 }
 
+void WINAPI ExInitializeRundownProtection(PVOID runref)
+{
+    FIXME("stub! (%p)\n", runref);
+}
+
+BOOLEAN WINAPI ExAcquireRundownProtection(PVOID runref)
+{
+    FIXME("stub! (%p)\n", runref);
+    return TRUE;
+}
+
+void WINAPI ExReleaseRundownProtection(PVOID runref)
+{
+    FIXME("stub! (%p)\n", runref);
+}
+
 BOOLEAN WINAPI ExEnumHandleTable(PVOID handle_table, PVOID handle_proc, PVOID param, PHANDLE last_handle)
 {
     FIXME("stub! (%p %p %p %p)\n", handle_table, handle_proc, param, last_handle);
