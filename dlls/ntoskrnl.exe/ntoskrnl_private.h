@@ -53,6 +53,9 @@ struct _OBJECT_TYPE
 struct _EPROCESS
 {
     DISPATCHER_HEADER header;
+    /* padding to put handle_table at 0x200 */
+    CHAR padding[0x200 - sizeof(DISPATCHER_HEADER)];
+    PVOID handle_table;
     PROCESS_BASIC_INFORMATION info;
     /* TODO: we should store a section object here instead */
     PFILE_OBJECT file_object;
