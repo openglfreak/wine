@@ -712,8 +712,36 @@ int read_emulated_memory(void *buf, BYTE *addr, unsigned int length)
 {
     SIZE_T offset;
     struct kernel_struct *kernel_struct;
+    struct _KTHREAD *current_thread;
+    struct _EPROCESS *current_process = NULL;
 
     TRACE("(%p, %u)\n", addr, length);
+
+    if ((current_thread = TO_USER(NtCurrentTeb()->SystemReserved1[15])))
+    {
+        current_process = TO_USER(current_thread->process);
+
+        if (current_thread->user_input_copy)
+        {
+            ULONG size = HeapSize( GetProcessHeap(), 0, current_thread->user_input_copy );
+            offset = addr - current_thread->user_input;
+            if (size != -1 && offset + length <= size)
+            {
+                memcpy(buf, (BYTE*)current_thread->user_input_copy + offset, length);
+                goto done;
+            }
+        }
+        if (current_thread->user_output_copy)
+        {
+            ULONG size = HeapSize( GetProcessHeap(), 0, current_thread->user_output_copy );
+            offset = addr - current_thread->user_output;
+            if (size != -1 && offset + length <= size)
+            {
+                memcpy(buf, (BYTE*)current_thread->user_output_copy + offset, length);
+                goto done;
+            }
+        }
+    }
 
     /* first check user shared data */
     offset = addr - user_shared_data;
@@ -739,14 +767,48 @@ int read_emulated_memory(void *buf, BYTE *addr, unsigned int length)
 
     ERR("Failed to emulate memory access to %p+%u from %016llx\n", addr, length, current_rip);
     return 0;
+    done:
+    return 1;
 }
 
 int write_emulated_memory(BYTE *addr, void *buf, unsigned int length)
 {
     SIZE_T offset;
+    struct _KTHREAD *current_thread;
+    struct _EPROCESS *current_process = NULL;
     struct kernel_struct *kernel_struct;
 
     TRACE("(%p, %u)\n", addr, length);
+
+    if ((current_thread = TO_USER(NtCurrentTeb()->SystemReserved1[15])))
+    {
+        current_process = TO_USER(current_thread->process);
+        if (current_thread->user_output_copy)
+        {
+            ULONG size = HeapSize( GetProcessHeap(), 0, current_thread->user_output_copy );
+            offset = addr - current_thread->user_output;
+            if (length == -1 && buf == addr && addr == current_thread->user_output)
+                length = size;
+            if (size != -1 && offset + length <= size)
+            {
+                memcpy((BYTE*)current_thread->user_output_copy + offset, buf, length);
+                goto done;
+            }
+        }
+        if (current_thread->user_input_copy)
+        {
+            ULONG size = HeapSize( GetProcessHeap(), 0, current_thread->user_input_copy );
+            offset = addr - current_thread->user_input;
+            if (length == -1 && buf == addr && addr == current_thread->user_input)
+                length = size;
+            if (size != -1 && offset + length <= size)
+            {
+                FIXME("ignoring write to input IRP memory\n");
+                memcpy((BYTE*)current_thread->user_input_copy + offset, buf, length);
+                goto done;
+            }
+        }
+    }
 
     offset = addr - user_shared_data;
     if (offset + length <= sizeof(KSHARED_USER_DATA))
@@ -769,6 +831,8 @@ int write_emulated_memory(BYTE *addr, void *buf, unsigned int length)
 
     ERR("Failed to emulate memory access to %p+%u\n", addr, length);
     return 0;
+    done:
+    return 1;
 }
 
 #define REX_B   1
