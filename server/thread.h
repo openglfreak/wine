@@ -95,6 +95,7 @@ struct thread
     WCHAR                 *desc;          /* thread description string */
     struct timeout_user   *exit_poll;     /* poll if the thread/process has exited already */
     struct object         *callback_init_event;
+    struct process *       attached_process;
 };
 
 extern struct thread *current;

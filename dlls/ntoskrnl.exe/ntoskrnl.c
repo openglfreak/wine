@@ -3431,8 +3431,6 @@ struct thread_create_callback
     PCREATE_THREAD_NOTIFY_ROUTINE routine;
 };
 
-void WINAPI KeStackAttachProcess(PEPROCESS process, PKAPC_STATE state);
-void WINAPI KeUnstackDetachProcess(PKAPC_STATE state);
 static void dispatch_thread_create_callbacks(const krnl_cbdata_t *data)
 {
     struct thread_create_callback *cb;
@@ -3442,7 +3440,7 @@ static void dispatch_thread_create_callbacks(const krnl_cbdata_t *data)
 
     stat = PsLookupProcessByProcessId(wine_server_ptr_handle(data->process_life.pid), &new_thread_proc);
     if (!stat)
-        KeStackAttachProcess(new_thread_proc, &apc_state);
+        KeStackAttachProcess((KPROCESS*)new_thread_proc, &apc_state);
     else
         ERR("Failed to attach to new thread's process. %x\n", stat);
 
@@ -4727,14 +4725,49 @@ void WINAPI KeSignalCallDpcDone(void *barrier)
     InterlockedDecrement((LONG *)barrier);
 }
 
-void WINAPI KeStackAttachProcess(KPROCESS *process, KAPC_STATE *apc_state)
+void WINAPI KeStackAttachProcess(KPROCESS* process, KAPC_STATE* state)
 {
-    FIXME("process %p, apc_state %p stub.\n", process, apc_state);
+    PKTHREAD thread = KeGetCurrentThread();
+    NTSTATUS stat;
+
+    TRACE("%p %p\n", process, state);
+
+    state->Process = (PKPROCESS)thread->process;
+    thread->process = (PEPROCESS)process;
+
+    SERVER_START_REQ(attach_process)
+    {
+        req->manager = wine_server_obj_handle(get_device_manager());
+        req->detach = 0;
+        req->process = wine_server_client_ptr(process);
+        stat = wine_server_call( req );
+    }
+    SERVER_END_REQ;
+
+    if (stat)
+        ERR("%x\n", stat);
 }
 
-void WINAPI KeUnstackDetachProcess(KAPC_STATE *apc_state)
+void WINAPI KeUnstackDetachProcess(PKAPC_STATE state)
 {
-    FIXME("apc_state %p stub.\n", apc_state);
+    PKTHREAD thread = KeGetCurrentThread();
+    NTSTATUS stat;
+
+    TRACE("%p\n", state);
+
+    thread->process = (PEPROCESS)state->Process;
+
+    SERVER_START_REQ(attach_process)
+    {
+        req->manager = wine_server_obj_handle(get_device_manager());
+        req->detach = 1;
+        req->process = wine_server_client_ptr(state->Process);
+        stat = wine_server_call( req );
+    }
+    SERVER_END_REQ;
+
+    if (stat)
+        ERR("%x\n", stat);
 }
 
 NTSTATUS WINAPI KdDisableDebugger(void)

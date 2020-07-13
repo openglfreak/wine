@@ -266,6 +266,7 @@ static inline void init_thread_structure( struct thread *thread )
     thread->desc            = NULL;
     thread->desc_len        = 0;
     thread->exit_poll       = NULL;
+    thread->attached_process = NULL;
     thread->callback_init_event = NULL;
 
     thread->creation_time = current_time;
@@ -450,6 +451,7 @@ static void cleanup_thread( struct thread *thread )
     if (thread->request_fd) release_object( thread->request_fd );
     if (thread->reply_fd) release_object( thread->reply_fd );
     if (thread->wait_fd) release_object( thread->wait_fd );
+    if (thread->attached_process) release_object ( thread->attached_process);
     if (thread->callback_init_event) release_object( thread->callback_init_event );
     cleanup_clipboard_thread(thread);
     destroy_thread_windows( thread );
@@ -472,6 +474,7 @@ static void cleanup_thread( struct thread *thread )
     thread->desktop = 0;
     thread->desc = NULL;
     thread->desc_len = 0;
+    thread->attached_process = NULL;
 }
 
 /* destroy a thread when its refcount is 0 */
