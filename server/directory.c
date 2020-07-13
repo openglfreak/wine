@@ -105,6 +105,7 @@ struct type_descr directory_type =
 struct directory
 {
     struct object     obj;        /* object header */
+    struct list       kernel_object;   /* list of kernel object pointers */
     struct namespace *entries;    /* directory's name space */
 };
 
@@ -112,6 +113,7 @@ static void directory_dump( struct object *obj, int verbose );
 static struct object *directory_lookup_name( struct object *obj, struct unicode_str *name,
                                              unsigned int attr, struct object *root );
 static void directory_destroy( struct object *obj );
+static struct list *directory_get_kernel_obj_list( struct object *obj );
 
 static const struct object_ops directory_ops =
 {
@@ -133,7 +135,7 @@ static const struct object_ops directory_ops =
     directory_link_name,          /* link_name */
     default_unlink_name,          /* unlink_name */
     no_open_file,                 /* open_file */
-    no_kernel_obj_list,           /* get_kernel_obj_list */
+    directory_get_kernel_obj_list,/* get_kernel_obj_list */
     no_close_handle,              /* close_handle */
     directory_destroy             /* destroy */
 };
@@ -251,6 +253,12 @@ static void directory_destroy( struct object *obj )
     free( dir->entries );
 }
 
+static struct list *directory_get_kernel_obj_list( struct object *obj )
+{
+    struct directory *dir = (struct event *)obj;
+    return &dir->kernel_object;
+}
+
 static struct directory *create_directory( struct object *root, const struct unicode_str *name,
                                            unsigned int attr, unsigned int hash_size,
                                            const struct security_descriptor *sd )
@@ -265,6 +273,7 @@ static struct directory *create_directory( struct object *root, const struct uni
             release_object( dir );
             return NULL;
         }
+        list_init( &dir->kernel_object );
     }
     return dir;
 }
