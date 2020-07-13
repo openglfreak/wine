@@ -341,7 +341,7 @@ static struct kernel_object *kernel_object_from_obj( struct device_manager *mana
     return NULL;
 }
 
-static client_ptr_t get_kernel_object_ptr( struct device_manager *manager, struct object *obj )
+client_ptr_t get_kernel_object_ptr( struct device_manager *manager, struct object *obj )
 {
     struct kernel_object *kernel_object = kernel_object_from_obj( manager, obj );
     return kernel_object ? kernel_object->user_ptr : 0;
