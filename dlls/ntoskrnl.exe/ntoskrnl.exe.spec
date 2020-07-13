@@ -1339,7 +1339,7 @@
 @ stub SePrivilegeObjectAuditAlarm
 @ stub SePublicDefaultDacl
 @ stub SeQueryAuthenticationIdToken
-@ stub SeQueryInformationToken
+@ stdcall SeQueryInformationToken(ptr long ptr)
 @ stub SeQuerySecurityDescriptorInfo
 @ stub SeQuerySessionIdToken
 @ stub SeRegisterLogonSessionTerminatedRoutine
