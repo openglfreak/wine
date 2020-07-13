@@ -5320,6 +5320,11 @@ void WINAPI ExRaiseDatatypeMisalignment(void)
     FIXME("stub! caller=%p\n", __builtin_return_address(0));
 }
 
+PVOID WINAPI PsGetProcessDebugPort(PEPROCESS process)
+{
+    return NULL;
+}
+
 void WINAPI KeStackAttachProcess(KPROCESS* process, KAPC_STATE* state)
 {
     PKTHREAD thread = KeGetCurrentThread();
