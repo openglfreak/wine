@@ -417,6 +417,7 @@ static inline void reserve_dos_area(void)
 #endif
 
 
+static int stub_wine_mmap_add_reserved_area;
 /***********************************************************************
  *           mmap_init
  */
@@ -482,12 +483,40 @@ void mmap_init(void)
 
 #elif defined(__x86_64__) || defined(__aarch64__)
 
-    if (!list_head( &reserved_areas ))
+    extern int __wine_main_argc;
+    extern char **__wine_main_argv;
+    if(__wine_main_argc >= 1 && !(strcmp(__wine_main_argv[1], "C:\\windows\\system32\\winedevice.exe")))
     {
-        /* if we don't have a preloader, try to reserve the space now */
-        reserve_area( (void *)0x000000010000, (void *)0x000068000000 );
-        reserve_area( (void *)0x00007ff00000, (void *)0x00007fff0000 );
-        reserve_area( (void *)0x7ffffe000000, (void *)0x7fffffff0000 );
+        if (!list_head( &reserved_areas ))
+            reserve_area( (void *)0x00007ffe0000, (void *)0x00007fff0000 );
+        /* we reserve almost the entire first half of the user address space,
+          and don't remember the reservation so we can't allocate there */
+        stub_wine_mmap_add_reserved_area = 1;
+        reserve_area( (void *)0x000000010000, (void *)0x400000000000);
+        stub_wine_mmap_add_reserved_area = 0;
+
+        /* remove the dos area and low memory area listing */
+        if (list_head( &reserved_areas))
+            wine_mmap_remove_reserved_area_obsolete( (void *)0x10000, 0xF0000, 0 );
+        if (list_head( &reserved_areas))
+            wine_mmap_remove_reserved_area_obsolete( (void *)0x110000, 0x67ef0000, 0 );
+        if (list_head( &reserved_areas))
+            wine_mmap_remove_reserved_area_obsolete( (void *)0x3ffffe000000, 0x1ff0000, 0);
+    }
+    else
+    {
+        if (!list_head( &reserved_areas ))
+        {
+            /* if we don't have a preloader, try to reserve the space now */
+            reserve_area( (void *)0x000000010000, (void *)0x000068000000 );
+            reserve_area( (void *)0x00007ff00000, (void *)0x00007fff0000 );
+            reserve_area( (void *)0x3ffffe000000, (void *)0x3fffffff0000 );
+        }
+
+        /* reserve the system space */
+        stub_wine_mmap_add_reserved_area = 1;
+        reserve_area( (void *)0x400000000000, (void *)0x7fffffff0000 );
+        stub_wine_mmap_add_reserved_area = 0;
     }
 
 #endif
@@ -507,6 +536,9 @@ void wine_mmap_add_reserved_area_obsolete( void *addr, size_t size )
 {
     struct reserved_area *area;
     struct list *ptr;
+
+    if (stub_wine_mmap_add_reserved_area)
+        return;
 
     if (!((char *)addr + size)) size--;  /* avoid wrap-around */
 
