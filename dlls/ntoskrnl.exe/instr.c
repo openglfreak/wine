@@ -492,6 +492,11 @@ void forget_kernel_struct(void *obj)
     return;
 }
 
+void flush_emulated_memory(void)
+{
+    return;
+}
+
 #elif defined(__x86_64__)  /* __i386__ */
 
 WINE_DEFAULT_DEBUG_CHANNEL(int);
@@ -711,7 +716,8 @@ static DWORD64 current_rip;
 
 int read_emulated_memory(void *buf, BYTE *addr, unsigned int length)
 {
-    SIZE_T offset;
+    SIZE_T offset, block_size = 0;
+    BYTE *block_base = 0x0;
     struct kernel_struct *kernel_struct;
     struct _KTHREAD *current_thread;
     struct _EPROCESS *current_process = NULL;
@@ -729,6 +735,8 @@ int read_emulated_memory(void *buf, BYTE *addr, unsigned int length)
             if (size != -1 && offset + length <= size)
             {
                 memcpy(buf, (BYTE*)current_thread->user_input_copy + offset, length);
+                block_base = current_thread->user_input;
+                block_size = size;
                 goto done;
             }
         }
@@ -739,16 +747,25 @@ int read_emulated_memory(void *buf, BYTE *addr, unsigned int length)
             if (size != -1 && offset + length <= size)
             {
                 memcpy(buf, (BYTE*)current_thread->user_output_copy + offset, length);
+                block_base = current_thread->user_output;
+                block_size = size;
                 goto done;
             }
         }
     }
+
+    if (buf == addr)
+        goto fail;
 
     /* first check user shared data */
     offset = addr - user_shared_data;
     if (offset + length <= sizeof(KSHARED_USER_DATA))
     {
         WARN("user_shared_data accessed at offset %x @ %016llx\n", offset, current_rip);
+        if (offset == 0x2d4)
+        {
+            TRACE("KdDebuggerNotEnabled = %u\n", *(BYTE*)(wine_user_shared_data + offset));
+        }
         memcpy(buf, wine_user_shared_data + offset, length);
         return 1;
     }
@@ -776,6 +793,14 @@ int read_emulated_memory(void *buf, BYTE *addr, unsigned int length)
             {
                 BOOL ret = ReadProcessMemory(process, addr, buf, length, NULL);
                 CloseHandle(process);
+                if (ret)
+                {
+                    unsigned int i = 0;
+                    for (; i < length; i++)
+                    {
+                        WARN("%02x, ", ((BYTE*)buf)[i]);
+                    }WARN("\n");
+                }
                 if (!ret)
                     ERR("Failed to read memory from process. %u\n", GetLastError());
                 return ret;
@@ -789,12 +814,16 @@ int read_emulated_memory(void *buf, BYTE *addr, unsigned int length)
     ERR("Failed to emulate memory access to %p+%u from %016llx\n", addr, length, current_rip);
     return 0;
     done:
+    if (buf != addr && (block_base + block_size <= (PBYTE)MmHighestUserAddress) && active_thread != GetCurrentThreadId())
+        map_user_memory(block_base, block_size);
+
     return 1;
 }
 
 int write_emulated_memory(BYTE *addr, void *buf, unsigned int length)
 {
-    SIZE_T offset;
+    SIZE_T offset, block_size = 0;
+    BYTE *block_base = 0x0;
     struct _KTHREAD *current_thread;
     struct _EPROCESS *current_process = NULL;
     struct kernel_struct *kernel_struct;
@@ -813,6 +842,8 @@ int write_emulated_memory(BYTE *addr, void *buf, unsigned int length)
             if (size != -1 && offset + length <= size)
             {
                 memcpy((BYTE*)current_thread->user_output_copy + offset, buf, length);
+                block_base = current_thread->user_output;
+                block_size = size;
                 goto done;
             }
         }
@@ -826,10 +857,15 @@ int write_emulated_memory(BYTE *addr, void *buf, unsigned int length)
             {
                 FIXME("ignoring write to input IRP memory\n");
                 memcpy((BYTE*)current_thread->user_input_copy + offset, buf, length);
+                block_base = current_thread->user_input;
+                block_size = size;
                 goto done;
             }
         }
     }
+
+    if (buf == addr)
+        goto fail;
 
     offset = addr - user_shared_data;
     if (offset + length <= sizeof(KSHARED_USER_DATA))
@@ -860,6 +896,14 @@ int write_emulated_memory(BYTE *addr, void *buf, unsigned int length)
             {
                 BOOL ret = WriteProcessMemory(process, addr, buf, length, NULL);
                 CloseHandle(process);
+                if (ret)
+                {
+                    unsigned int i = 0;
+                    for (; i < length; i++)
+                    {
+                        WARN("%02x, ", ((BYTE*)buf)[i]);
+                    }WARN("\n");
+                }
                 return ret;
             }
             else
@@ -871,6 +915,8 @@ int write_emulated_memory(BYTE *addr, void *buf, unsigned int length)
     ERR("Failed to emulate memory access to %p+%u\n", addr, length);
     return 0;
     done:
+    if (buf != addr && (block_base + block_size <= (PBYTE)MmHighestUserAddress) && active_thread != GetCurrentThreadId())
+        map_user_memory(block_base, block_size);
     return 1;
 }
 

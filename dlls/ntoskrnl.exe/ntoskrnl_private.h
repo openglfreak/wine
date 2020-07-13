@@ -22,6 +22,7 @@
 #define __WINE_NTOSKRNL_PRIVATE_H
 
 #include "wine/asm.h"
+#include "wine/list.h"
 
 static inline LPCSTR debugstr_us( const UNICODE_STRING *us )
 {
@@ -35,6 +36,13 @@ typedef void (*kernel_struct_accessed)(void *base, DWORD offset, BOOL write, voi
 
 void *register_kernel_struct(void *obj, unsigned int size, kernel_struct_accessed callback);
 void forget_kernel_struct(void *obj);
+
+void flush_emulated_memory(void);
+
+int suspend_all_other_threads(void);
+void resume_system_threads(void);
+
+
 struct _OBJECT_TYPE
 {
     const WCHAR *name;            /* object type name used for type validation */
@@ -63,6 +71,7 @@ struct _KTHREAD
     CRITICAL_SECTION apc_cs;
     HANDLE apc_event;
     HANDLE imposter_thread;
+    struct list system_thread_entry;
     PVOID user_input_copy, user_output_copy;
     PBYTE user_input, user_output;
 };

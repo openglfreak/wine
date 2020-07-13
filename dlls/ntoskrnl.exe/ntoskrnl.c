@@ -44,6 +44,7 @@
 #include "wine/server.h"
 #include "wine/debug.h"
 #include "wine/heap.h"
+#include "wine/list.h"
 #include "wine/rbtree.h"
 #include "wine/svcctl.h"
 
@@ -446,6 +447,8 @@ static NTSTATUS WINAPI dispatch_irp_completion( DEVICE_OBJECT *device, IRP *irp,
     HANDLE irp_handle = context;
     void *out_buff = irp->UserBuffer;
     NTSTATUS status;
+
+    flush_emulated_memory();
 
     if (KeGetCurrentThread()->user_output_copy)
         out_buff = KeGetCurrentThread()->user_output_copy;
@@ -917,6 +920,81 @@ void handle_callback(const krnl_cbdata_t *data, const WCHAR *image_path)
 }
 
 PEPROCESS PsInitialSystemProcess = NULL;
+
+static struct list system_threads = LIST_INIT(system_threads);
+
+int suspend_all_other_threads()
+{
+    PKTHREAD thread;
+    CONTEXT ctx = {.ContextFlags = CONTEXT_ALL};
+    int ret = 1;
+
+    LIST_FOR_EACH_ENTRY(thread, &system_threads, struct _KTHREAD, system_thread_entry)
+    {
+        HANDLE thread_handle;
+
+        thread = TO_USER(thread);
+
+        if (TO_USER(NtCurrentTeb()->SystemReserved1[15]) == thread)
+            continue;
+
+        if ((ret = (!ObOpenObjectByPointer(TO_KRNL(thread), OBJ_KERNEL_HANDLE, NULL, THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT, NULL, KernelMode, &thread_handle))))
+        {
+            if ((ret = SuspendThread(thread_handle) != -1))
+                ret = GetThreadContext(thread_handle, &ctx);
+            CloseHandle(thread_handle);
+        }
+
+        if (!ret)
+            return ret;
+    }
+
+    if (GetCurrentThreadId() != request_thread)
+    {
+        HANDLE thread_handle;
+        /* suspend request thread */
+
+        if ((ret = !!(thread_handle = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT, FALSE, request_thread))))
+        {
+            if ((ret = SuspendThread(thread_handle)))
+                ret = GetThreadContext(thread_handle, &ctx);
+            CloseHandle(thread_handle);
+        }
+    }
+
+    return ret;
+}
+
+void resume_system_threads()
+{
+    PKTHREAD thread;
+
+    LIST_FOR_EACH_ENTRY(thread, &system_threads, struct _KTHREAD, system_thread_entry)
+    {
+        HANDLE thread_handle;
+
+        thread = TO_USER(thread);
+
+        if (TO_USER(NtCurrentTeb()->SystemReserved1[15]) == thread)
+            continue;
+
+        if (!(ObOpenObjectByPointer(TO_KRNL(thread), OBJ_KERNEL_HANDLE, NULL, THREAD_SUSPEND_RESUME, NULL, KernelMode, &thread_handle)))
+        {
+            ResumeThread(thread_handle);
+            CloseHandle(thread_handle);
+        }
+    }
+
+    {
+        HANDLE thread_handle;
+
+        if ((thread_handle = OpenThread(THREAD_SUSPEND_RESUME, FALSE, request_thread)))
+        {
+            ResumeThread(thread_handle);
+            CloseHandle(thread_handle);
+        }
+    }
+}
 
 /***********************************************************************
  *           wine_ntoskrnl_main_loop   (Not a Windows API)
@@ -3356,8 +3434,11 @@ static void WINAPI init_system_thread(PVOID context)
     HeapFree( GetProcessHeap(), 0, context );
 
     NtCurrentTeb()->SystemReserved1[15] = KeGetCurrentThread();
+    //list_add_tail(&system_threads, &KeGetCurrentThread()->system_thread_entry);
 
     info.start(info.context);
+
+    //list_remove(&KeGetCurrentThread()->system_thread_entry);
 }
 
 /***********************************************************************
@@ -3667,6 +3748,7 @@ NTSTATUS WINAPI PsReferenceProcessFilePointer(PEPROCESS process, FILE_OBJECT **f
 NTSTATUS WINAPI PsTerminateSystemThread(NTSTATUS status)
 {
     TRACE("status %#x.\n", status);
+    //list_remove(&KeGetCurrentThread()->system_thread_entry);
     ExitThread( status );
 }
 
