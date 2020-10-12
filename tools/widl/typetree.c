@@ -441,7 +441,7 @@ type_t *type_interface_declare(char *name, struct namespace *namespace)
     return type;
 }
 
-type_t *type_interface_define(type_t *iface, attr_list_t *attrs, type_t *inherit, statement_list_t *stmts)
+type_t *type_interface_define(type_t *iface, attr_list_t *attrs, type_t *inherit, statement_list_t *stmts, type_list_t *requires)
 {
     if (iface->defined)
         error_loc("interface %s already defined at %s:%d\n",
@@ -457,6 +457,7 @@ type_t *type_interface_define(type_t *iface, attr_list_t *attrs, type_t *inherit
     iface->details.iface->inherit = inherit;
     iface->details.iface->disp_inherit = NULL;
     iface->details.iface->async_iface = NULL;
+    iface->details.iface->requires = requires;
     iface->defined = TRUE;
     compute_method_indexes(iface);
     return iface;
@@ -485,6 +486,7 @@ type_t *type_dispinterface_define(type_t *iface, attr_list_t *attrs, var_list_t 
     if (!iface->details.iface->inherit) error_loc("IDispatch is undefined\n");
     iface->details.iface->disp_inherit = NULL;
     iface->details.iface->async_iface = NULL;
+    iface->details.iface->requires = NULL;
     iface->defined = TRUE;
     compute_method_indexes(iface);
     return iface;
@@ -504,6 +506,7 @@ type_t *type_dispinterface_define_from_iface(type_t *dispiface, attr_list_t *att
     if (!dispiface->details.iface->inherit) error_loc("IDispatch is undefined\n");
     dispiface->details.iface->disp_inherit = iface;
     dispiface->details.iface->async_iface = NULL;
+    dispiface->details.iface->requires = NULL;
     dispiface->defined = TRUE;
     compute_method_indexes(dispiface);
     return dispiface;
