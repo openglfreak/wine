@@ -294,6 +294,8 @@ static typelib_t *current_typelib;
 %type <type> type unqualified_type qualified_type
 %type <type> type_parameter
 %type <typelist> type_parameters
+%type <type> parameterized_type
+%type <typelist> parameterized_types
 %type <typelist> requires required_types
 %type <ifref> class_interface
 %type <ifref_list> class_interfaces
@@ -910,6 +912,20 @@ qualified_type:
 	| namespace_pfx typename		{ $$ = find_type_or_error($1, $2); }
 	;
 
+parameterized_type: qualified_type '<' parameterized_types '>'
+						{ $$ = find_parameterized_type($1, $3); }
+	;
+
+parameterized_types:
+	  base_type				{ $$ = append_type(NULL, $1); }
+	| qualified_type			{ $$ = append_type(NULL, $1); }
+	| qualified_type '*'			{ $$ = append_type(NULL, type_new_pointer($1)); }
+	| parameterized_type			{ $$ = append_type(NULL, $1); }
+	| parameterized_type '*'		{ $$ = append_type(NULL, type_new_pointer($1)); }
+	| parameterized_types ',' parameterized_types
+						{ $$ = append_types($1, $3); }
+	;
+
 coclass:  tCOCLASS typename			{ $$ = type_coclass_declare($2); }
 	;
 
@@ -966,6 +982,7 @@ dispinterfacedef:
 
 inherit:					{ $$ = NULL; }
 	| ':' qualified_type                    { $$ = $2; }
+	| ':' parameterized_type		{ $$ = $2; }
 	;
 
 type_parameter: typename			{ $$ = get_type(TYPE_PARAMETER, $1, parameters_namespace, 0); }
@@ -984,6 +1001,7 @@ interface:
 
 required_types:
 	  qualified_type			{ $$ = append_type(NULL, $1); }
+	| parameterized_type			{ $$ = append_type(NULL, $1); }
 	| required_types ',' required_types	{ $$ = append_types($1, $3); }
 
 requires:					{ $$ = NULL; }
@@ -1208,6 +1226,7 @@ unqualified_type:
 type:
 	  unqualified_type
 	| namespace_pfx typename		{ $$ = find_type_or_error($1, $2); }
+	| parameterized_type			{ $$ = $1; }
 	;
 
 typedef: m_attributes tTYPEDEF m_attributes decl_spec declarator_list
@@ -3278,4 +3297,20 @@ void init_loc_info(loc_info_t *i)
     i->input_name = input_name ? input_name : "stdin";
     i->line_number = line_number;
     i->near_text = parser_text;
+}
+
+type_t *find_parameterized_type(type_t *type, type_list_t *params)
+{
+    char *name = format_parameterized_type_name(type, params);
+
+    if (parameters_namespace)
+    {
+        assert(type->type_type == TYPE_PARAMETERIZED_TYPE);
+        type = type_parameterized_type_specialize_partial(type, params);
+    }
+    /* FIXME: If not in another parameterized type, we'll have to look for the declared specialization. */
+    else error_loc("parameterized type '%s' not declared\n", name);
+
+    free(name);
+    return type;
 }
