@@ -67,6 +67,8 @@ type_t *type_apicontract_define(type_t *apicontract, attr_list_t *attrs);
 type_t *type_parameterized_interface_declare(char *name, struct namespace *namespace, type_list_t *params);
 type_t *type_parameterized_interface_define(type_t *type, attr_list_t *attrs, type_t *inherit, statement_list_t *stmts, type_list_t *requires);
 type_t *type_parameterized_type_specialize_partial(type_t *type, type_list_t *params);
+type_t *type_parameterized_type_specialize_declare(type_t *type, type_list_t *params);
+type_t *type_parameterized_type_specialize_define(type_t *type, type_list_t *params);
 int type_is_equal(const type_t *type1, const type_t *type2);
 const char *type_get_name(const type_t *type, enum name_type name_type);
 char *gen_name(void);
