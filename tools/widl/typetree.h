@@ -64,6 +64,8 @@ type_t *type_coclass_define(type_t *coclass, attr_list_t *attrs, ifref_list_t *i
 type_t *type_runtimeclass_define(type_t *runtimeclass, attr_list_t *attrs, ifref_list_t *ifaces);
 type_t *type_apicontract_declare(char *name, struct namespace *namespace);
 type_t *type_apicontract_define(type_t *apicontract, attr_list_t *attrs);
+type_t *type_delegate_declare(char *name, struct namespace *namespace);
+type_t *type_delegate_define(type_t *delegate, attr_list_t *attrs, statement_list_t *stmts);
 type_t *type_parameterized_interface_declare(char *name, struct namespace *namespace, type_list_t *params);
 type_t *type_parameterized_interface_define(type_t *type, attr_list_t *attrs, type_t *inherit, statement_list_t *stmts, type_list_t *requires);
 type_t *type_parameterized_type_specialize_partial(type_t *type, type_list_t *params);
@@ -251,6 +253,7 @@ static inline int type_is_complete(const type_t *type)
     case TYPE_ARRAY:
     case TYPE_BITFIELD:
     case TYPE_RUNTIMECLASS:
+    case TYPE_DELEGATE:
         return TRUE;
     case TYPE_APICONTRACT:
     case TYPE_PARAMETERIZED_TYPE:
@@ -371,6 +374,13 @@ static inline type_t *type_runtimeclass_get_default_iface(const type_t *type)
             return entry->iface;
 
     return NULL;
+}
+
+static inline type_t *type_delegate_get_iface(const type_t *type)
+{
+    type = type_get_real_type(type);
+    assert(type_get_type(type) == TYPE_DELEGATE);
+    return type->details.delegate.iface;
 }
 
 static inline const decl_spec_t *type_pointer_get_ref(const type_t *type)
