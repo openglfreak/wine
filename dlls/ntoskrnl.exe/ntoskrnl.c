@@ -2240,12 +2240,12 @@ static void *create_process_object( HANDLE handle )
 {
     PEPROCESS process;
 
-    if (!(process = alloc_kernel_object( PsProcessType, handle, sizeof(*process), 0 ))) return NULL;
+    if (!(process = alloc_kernel_object( PsProcessType, handle, _EPROCESS_SIZE, 0 ))) return NULL;
 
-    process->header.Type = 3;
-    process->header.WaitListHead.Blink = INVALID_HANDLE_VALUE; /* mark as kernel object */
-    NtQueryInformationProcess( handle, ProcessBasicInformation, &process->info, sizeof(process->info), NULL );
-    IsWow64Process( handle, &process->wow64 );
+    _EPROCESS_ACCESS(process, header).Type = 3;
+    _EPROCESS_ACCESS(process, header).WaitListHead.Blink = INVALID_HANDLE_VALUE; /* mark as kernel object */
+    NtQueryInformationProcess( handle, ProcessBasicInformation, &_EPROCESS_ACCESS(process, info), sizeof(_EPROCESS_ACCESS(process, info)), NULL );
+    IsWow64Process( handle, &_EPROCESS_ACCESS(process, wow64) );
     return process;
 }
 
@@ -2265,7 +2265,7 @@ POBJECT_TYPE PsProcessType = &process_type;
  */
 PEPROCESS WINAPI IoGetCurrentProcess(void)
 {
-    return KeGetCurrentThread()->process;
+    return _KTHREAD_ACCESS(KeGetCurrentThread(), process);
 }
 
 /***********************************************************************
@@ -2292,8 +2292,8 @@ NTSTATUS WINAPI PsLookupProcessByProcessId( HANDLE processid, PEPROCESS *process
  */
 HANDLE WINAPI PsGetProcessId(PEPROCESS process)
 {
-    TRACE( "%p -> %lx\n", process, process->info.UniqueProcessId );
-    return (HANDLE)process->info.UniqueProcessId;
+    TRACE( "%p -> %lx\n", process, _EPROCESS_ACCESS(process, info).UniqueProcessId );
+    return (HANDLE)_EPROCESS_ACCESS(process, info).UniqueProcessId;
 }
 
 /*********************************************************************
@@ -2301,7 +2301,7 @@ HANDLE WINAPI PsGetProcessId(PEPROCESS process)
  */
 HANDLE WINAPI PsGetProcessInheritedFromUniqueProcessId( PEPROCESS process )
 {
-    HANDLE id = (HANDLE)process->info.InheritedFromUniqueProcessId;
+    HANDLE id = (HANDLE)_EPROCESS_ACCESS(process, info).InheritedFromUniqueProcessId;
     TRACE( "%p -> %p\n", process, id );
     return id;
 }
@@ -2312,18 +2312,18 @@ static void *create_thread_object( HANDLE handle )
     struct _KTHREAD *thread;
     HANDLE process;
 
-    if (!(thread = alloc_kernel_object( PsThreadType, handle, sizeof(*thread), 0 ))) return NULL;
+    if (!(thread = alloc_kernel_object( PsThreadType, handle, _KTHREAD_SIZE, 0 ))) return NULL;
 
-    thread->header.Type = 6;
-    thread->header.WaitListHead.Blink = INVALID_HANDLE_VALUE; /* mark as kernel object */
-    thread->user_affinity = 0;
+    _KTHREAD_ACCESS(thread, header).Type = 6;
+    _KTHREAD_ACCESS(thread, header).WaitListHead.Blink = INVALID_HANDLE_VALUE; /* mark as kernel object */
+    _KTHREAD_ACCESS(thread, user_affinity) = 0;
 
     if (!NtQueryInformationThread( handle, ThreadBasicInformation, &info, sizeof(info), NULL ))
     {
-        thread->id = info.ClientId;
-        if ((process = OpenProcess( PROCESS_QUERY_INFORMATION, FALSE, HandleToUlong(thread->id.UniqueProcess) )))
+        _KTHREAD_ACCESS(thread, id) = info.ClientId;
+        if ((process = OpenProcess( PROCESS_QUERY_INFORMATION, FALSE, HandleToUlong(_KTHREAD_ACCESS(thread, id).UniqueProcess) )))
         {
-            kernel_object_from_handle( process, PsProcessType, (void**)&thread->process );
+            kernel_object_from_handle( process, PsProcessType, (void**)&_KTHREAD_ACCESS(thread, process) );
             NtClose( process );
         }
     }
@@ -2396,8 +2396,8 @@ NTSTATUS WINAPI PsLookupThreadByThreadId( HANDLE threadid, PETHREAD *thread )
  */
 HANDLE WINAPI PsGetThreadId(PETHREAD thread)
 {
-    TRACE( "%p -> %p\n", thread, thread->kthread.id.UniqueThread );
-    return thread->kthread.id.UniqueThread;
+    TRACE( "%p -> %p\n", thread, _KTHREAD_ACCESS(&_ETHREAD_ACCESS(thread, kthread), id).UniqueThread );
+    return _KTHREAD_ACCESS(&_ETHREAD_ACCESS(thread, kthread), id).UniqueThread;
 }
 
 /*********************************************************************
@@ -2405,8 +2405,8 @@ HANDLE WINAPI PsGetThreadId(PETHREAD thread)
  */
 HANDLE WINAPI PsGetThreadProcessId( PETHREAD thread )
 {
-    TRACE( "%p -> %p\n", thread, thread->kthread.id.UniqueProcess );
-    return thread->kthread.id.UniqueProcess;
+    TRACE( "%p -> %p\n", thread, _KTHREAD_ACCESS(&_ETHREAD_ACCESS(thread, kthread), id).UniqueProcess );
+    return _KTHREAD_ACCESS(&_ETHREAD_ACCESS(thread, kthread), id).UniqueProcess;
 }
 
 /***********************************************************************
@@ -2519,13 +2519,13 @@ KAFFINITY WINAPI KeSetSystemAffinityThreadEx(KAFFINITY affinity)
             &old, sizeof(old), NULL);
 
     if (old.Mask != system_affinity)
-        thread->user_affinity = old.Mask;
+        _KTHREAD_ACCESS(thread, user_affinity) = old.Mask;
 
     memset(&new, 0, sizeof(new));
     new.Mask = affinity;
 
     return NtSetInformationThread(GetCurrentThread(), ThreadGroupInformation, &new, sizeof(new))
-            ? 0 : thread->user_affinity;
+            ? 0 : _KTHREAD_ACCESS(thread, user_affinity);
 }
 
 
@@ -2549,10 +2549,10 @@ void WINAPI KeRevertToUserAffinityThreadEx(KAFFINITY affinity)
 
     memset(&new, 0, sizeof(new));
     new.Mask = affinity ? affinity
-            : (thread->user_affinity ? thread->user_affinity : system_affinity);
+            : (_KTHREAD_ACCESS(thread, user_affinity) ? _KTHREAD_ACCESS(thread, user_affinity) : system_affinity);
 
     NtSetInformationThread(GetCurrentThread(), ThreadGroupInformation, &new, sizeof(new));
-    thread->user_affinity = affinity;
+    _KTHREAD_ACCESS(thread, user_affinity) = affinity;
 }
 
 /***********************************************************************
@@ -2951,7 +2951,7 @@ NTSTATUS WINAPI PsCreateSystemThread(PHANDLE ThreadHandle, ULONG DesiredAccess,
  */
 HANDLE WINAPI PsGetCurrentProcessId(void)
 {
-    return KeGetCurrentThread()->id.UniqueProcess;
+    return _KTHREAD_ACCESS(KeGetCurrentThread(), id).UniqueProcess;
 }
 
 
@@ -2960,7 +2960,7 @@ HANDLE WINAPI PsGetCurrentProcessId(void)
  */
 HANDLE WINAPI PsGetCurrentThreadId(void)
 {
-    return KeGetCurrentThread()->id.UniqueThread;
+    return _KTHREAD_ACCESS(KeGetCurrentThread(), id).UniqueThread;
 }
 
 
@@ -2969,7 +2969,7 @@ HANDLE WINAPI PsGetCurrentThreadId(void)
  */
 BOOLEAN WINAPI PsIsSystemThread(PETHREAD thread)
 {
-    return thread->kthread.process == PsInitialSystemProcess;
+    return _KTHREAD_ACCESS(&_ETHREAD_ACCESS(thread, kthread), process) == PsInitialSystemProcess;
 }
 
 
@@ -3343,7 +3343,7 @@ NTSTATUS WINAPI IoCsqInitialize(PIO_CSQ csq, PIO_CSQ_INSERT_IRP insert_irp, PIO_
 void WINAPI KeEnterCriticalRegion(void)
 {
     TRACE( "semi-stub\n" );
-    KeGetCurrentThread()->critical_region++;
+    _KTHREAD_ACCESS(KeGetCurrentThread(), critical_region)++;
 }
 
 /***********************************************************************
@@ -3352,7 +3352,7 @@ void WINAPI KeEnterCriticalRegion(void)
 void WINAPI KeLeaveCriticalRegion(void)
 {
     TRACE( "semi-stub\n" );
-    KeGetCurrentThread()->critical_region--;
+    _KTHREAD_ACCESS(KeGetCurrentThread(), critical_region)--;
 }
 
 /***********************************************************************
@@ -3360,7 +3360,7 @@ void WINAPI KeLeaveCriticalRegion(void)
  */
 BOOLEAN WINAPI KeAreApcsDisabled(void)
 {
-    unsigned int critical_region = KeGetCurrentThread()->critical_region;
+    unsigned int critical_region = _KTHREAD_ACCESS(KeGetCurrentThread(), critical_region);
     TRACE( "%u\n", critical_region );
     return !!critical_region;
 }
@@ -4052,7 +4052,7 @@ ULONG WINAPI ExSetTimerResolution(ULONG time, BOOLEAN set_resolution)
 PEPROCESS WINAPI IoGetRequestorProcess(IRP *irp)
 {
     TRACE("irp %p.\n", irp);
-    return irp->Tail.Overlay.Thread->kthread.process;
+    return _KTHREAD_ACCESS(&_ETHREAD_ACCESS(irp->Tail.Overlay.Thread, kthread), process);
 }
 
 #ifdef _WIN64
@@ -4062,7 +4062,7 @@ PEPROCESS WINAPI IoGetRequestorProcess(IRP *irp)
 BOOLEAN WINAPI IoIs32bitProcess(IRP *irp)
 {
     TRACE("irp %p.\n", irp);
-    return irp->Tail.Overlay.Thread->kthread.process->wow64;
+    return _EPROCESS_ACCESS(_KTHREAD_ACCESS(&_ETHREAD_ACCESS(irp->Tail.Overlay.Thread, kthread), process), wow64);
 }
 #endif
 
@@ -4251,7 +4251,7 @@ void * WINAPI PsGetProcessSectionBaseAddress(PEPROCESS process)
         return NULL;
     }
 
-    status = NtReadVirtualMemory(h, &process->info.PebBaseAddress->ImageBaseAddress,
+    status = NtReadVirtualMemory(h, &_EPROCESS_ACCESS(process, info).PebBaseAddress->ImageBaseAddress,
             &image_base, sizeof(image_base), &size);
 
     NtClose(h);

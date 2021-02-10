@@ -36,14 +36,33 @@ struct _OBJECT_TYPE
     void (*release)(void*);       /* called when the last reference is released */
 };
 
-struct _EPROCESS
+struct _EPROCESS;
+struct _KTHREAD;
+struct _ETHREAD;
+
+#define _DEFINE_ACCESSOR(struct_name, return_type, field) \
+    static inline return_type * struct_name ## _ACCESS_ ## field ## _PTR ( struct struct_name *ptr ) \
+    { \
+        return (return_type*)&((struct struct_name ## _6_1 *)ptr)->field; \
+    }
+#define _DEFINE_GET_SIZE(struct_name) \
+    static inline size_t struct_name ## _GET_SIZE ( void ) \
+    { \
+        return sizeof(struct struct_name ## _6_1); \
+    }
+
+struct _EPROCESS_6_1
 {
     DISPATCHER_HEADER header;
     PROCESS_BASIC_INFORMATION info;
     BOOL wow64;
 };
+_DEFINE_ACCESSOR(_EPROCESS, DISPATCHER_HEADER, header)
+_DEFINE_ACCESSOR(_EPROCESS, PROCESS_BASIC_INFORMATION, info)
+_DEFINE_ACCESSOR(_EPROCESS, BOOL, wow64)
+_DEFINE_GET_SIZE(_EPROCESS)
 
-struct _KTHREAD
+struct _KTHREAD_6_1
 {
     DISPATCHER_HEADER header;
     PEPROCESS process;
@@ -51,11 +70,27 @@ struct _KTHREAD
     unsigned int critical_region;
     KAFFINITY user_affinity;
 };
+_DEFINE_ACCESSOR(_KTHREAD, DISPATCHER_HEADER, header)
+_DEFINE_ACCESSOR(_KTHREAD, PEPROCESS, process)
+_DEFINE_ACCESSOR(_KTHREAD, CLIENT_ID, id)
+_DEFINE_ACCESSOR(_KTHREAD, unsigned int, critical_region)
+_DEFINE_ACCESSOR(_KTHREAD, KAFFINITY, user_affinity)
+_DEFINE_GET_SIZE(_KTHREAD)
 
-struct _ETHREAD
+struct _ETHREAD_6_1
 {
-    struct _KTHREAD kthread;
+    struct _KTHREAD_6_1 kthread;
 };
+_DEFINE_ACCESSOR(_ETHREAD, struct _KTHREAD, kthread)
+_DEFINE_GET_SIZE(_ETHREAD)
+
+#define _EPROCESS_ACCESS(ptr, field) (*_EPROCESS_ACCESS_ ## field ## _PTR ( (ptr) ))
+#define _KTHREAD_ACCESS(ptr, field) (*_KTHREAD_ACCESS_ ## field ## _PTR ( (ptr) ))
+#define _ETHREAD_ACCESS(ptr, field) (*_ETHREAD_ACCESS_ ## field ## _PTR ( (ptr) ))
+
+#define _EPROCESS_SIZE (_EPROCESS_GET_SIZE())
+#define _KTHREAD_SIZE (_KTHREAD_GET_SIZE())
+#define _ETHREAD_SIZE (_ETHREAD_GET_SIZE())
 
 void *alloc_kernel_object( POBJECT_TYPE type, HANDLE handle, SIZE_T size, LONG ref ) DECLSPEC_HIDDEN;
 NTSTATUS kernel_object_from_handle( HANDLE handle, POBJECT_TYPE type, void **ret ) DECLSPEC_HIDDEN;
