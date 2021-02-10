@@ -101,6 +101,7 @@ static void *pcap_handle = NULL;
 
 static BOOL load_functions(void)
 {
+#ifdef SONAME_LIBPCAP
     pcap_handle = dlopen(SONAME_LIBPCAP, RTLD_NOW);
 
     if (!pcap_handle)
@@ -144,6 +145,9 @@ static BOOL load_functions(void)
     #undef LOAD_FUNCPTR
 
     return TRUE;
+#else
+    return FALSE;
+#endif
 }
 
 void CDECL wine_pcap_breakloop(pcap_t *p)
