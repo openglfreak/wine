@@ -90,6 +90,8 @@ static void *ldr_notify_cookie;
 static PLOAD_IMAGE_NOTIFY_ROUTINE load_image_notify_routines[8];
 static unsigned int load_image_notify_routine_count;
 
+RTL_OSVERSIONINFOEXW windows_version;
+
 struct wine_driver
 {
     DRIVER_OBJECT driver_obj;
@@ -858,6 +860,9 @@ NTSTATUS CDECL wine_ntoskrnl_main_loop( HANDLE stop_event )
     context.irp     = NULL;
     context.in_size = 4096;
     context.in_buff = NULL;
+
+    windows_version.dwOSVersionInfoSize = sizeof(windows_version);
+    RtlGetVersion( &windows_version );
 
     /* Set the system process global before setting up the request thread trickery  */
     PsInitialSystemProcess = IoGetCurrentProcess();

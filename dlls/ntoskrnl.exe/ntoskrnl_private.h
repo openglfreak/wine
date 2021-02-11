@@ -40,18 +40,30 @@ struct _EPROCESS;
 struct _KTHREAD;
 struct _ETHREAD;
 
+extern RTL_OSVERSIONINFOEXW windows_version;
+
 #define _DEFINE_ACCESSOR(struct_name, return_type, field) \
     static inline return_type * struct_name ## _ACCESS_ ## field ## _PTR ( struct struct_name *ptr ) \
     { \
+        if (windows_version.dwMajorVersion > 6 || (windows_version.dwMajorVersion == 6 && windows_version.dwMinorVersion >= 2)) \
+            return (return_type*)&((struct struct_name ## _10_0_17763 *)ptr)->field; \
         return (return_type*)&((struct struct_name ## _6_1 *)ptr)->field; \
     }
 #define _DEFINE_GET_SIZE(struct_name) \
     static inline size_t struct_name ## _GET_SIZE ( void ) \
     { \
+        if (windows_version.dwMajorVersion > 6 || (windows_version.dwMajorVersion == 6 && windows_version.dwMinorVersion >= 2)) \
+            return sizeof(struct struct_name ## _10_0_17763); \
         return sizeof(struct struct_name ## _6_1); \
     }
 
 struct _EPROCESS_6_1
+{
+    DISPATCHER_HEADER header;
+    PROCESS_BASIC_INFORMATION info;
+    BOOL wow64;
+};
+struct _EPROCESS_10_0_17763
 {
     DISPATCHER_HEADER header;
     PROCESS_BASIC_INFORMATION info;
@@ -70,6 +82,14 @@ struct _KTHREAD_6_1
     unsigned int critical_region;
     KAFFINITY user_affinity;
 };
+struct _KTHREAD_10_0_17763
+{
+    DISPATCHER_HEADER header;
+    PEPROCESS process;
+    CLIENT_ID id;
+    unsigned int critical_region;
+    KAFFINITY user_affinity;
+};
 _DEFINE_ACCESSOR(_KTHREAD, DISPATCHER_HEADER, header)
 _DEFINE_ACCESSOR(_KTHREAD, PEPROCESS, process)
 _DEFINE_ACCESSOR(_KTHREAD, CLIENT_ID, id)
@@ -78,6 +98,10 @@ _DEFINE_ACCESSOR(_KTHREAD, KAFFINITY, user_affinity)
 _DEFINE_GET_SIZE(_KTHREAD)
 
 struct _ETHREAD_6_1
+{
+    struct _KTHREAD_6_1 kthread;
+};
+struct _ETHREAD_10_0_17763
 {
     struct _KTHREAD_6_1 kthread;
 };
