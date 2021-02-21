@@ -2034,8 +2034,8 @@ static void test_process_memory(const struct test_input *test_input)
                                  buffer, sizeof(buffer), KernelMode, NULL);
         status = pMmCopyVirtualMemory(process, base + test_input->teststr_offset, PsGetCurrentProcess(),
                 buffer, sizeof(buffer), KernelMode, &size);
-        todo_wine ok(status == STATUS_SUCCESS, "Got unexpected status %#x.\n", status);
-        todo_wine ok(size == sizeof(buffer), "Got unexpected size %lu.\n", size);
+        ok(status == STATUS_SUCCESS, "Got unexpected status %#x.\n", status);
+        ok(size == sizeof(buffer), "Got unexpected size %lu.\n", size);
         todo_wine ok(!strcmp(buffer, teststr), "Got unexpected test string.\n");
     }
     else
