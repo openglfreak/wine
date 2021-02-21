@@ -449,6 +449,14 @@ failed:
     return 0;
 }
 
+/* transfer data from one process's memory space to another's */
+int transfer_process_memory( struct process *src_process, client_ptr_t src_ptr, struct process *dst_process, client_ptr_t dst_ptr, data_size_t *size, int allow_partial )
+{
+    set_error( STATUS_NOT_IMPLEMENTED );
+    *size = 0;
+    return 0;
+}
+
 /* retrieve an LDT selector entry */
 void get_selector_entry( struct thread *thread, int entry, unsigned int *base,
                          unsigned int *limit, unsigned char *flags )
