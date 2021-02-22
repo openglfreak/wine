@@ -1720,6 +1720,19 @@ struct process_info
 @END
 
 
+/* transfer data from one process's address space to another's */
+@REQ(transfer_process_memory)
+    obj_handle_t src_handle;   /* source process handle */
+    client_ptr_t src_addr;     /* addr to read from */
+    obj_handle_t dst_handle;   /* destination process handle */
+    client_ptr_t dst_addr;     /* addr to read from */
+    data_size_t  size;         /* how many bytes to copy */
+    int          allow_partial; /* allow/disallow partial copies */
+@REPLY
+    data_size_t  copied;       /* how much data was actually copied */
+@END
+
+
 /* Create a registry key */
 @REQ(create_key)
     unsigned int access;       /* desired access rights */

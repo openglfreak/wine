@@ -3974,11 +3974,53 @@ NTSTATUS WINAPI MmCopyVirtualMemory(PEPROCESS fromprocess, void *fromaddress, PE
                                     void *toaddress, SIZE_T bufsize, KPROCESSOR_MODE mode,
                                     SIZE_T *copied)
 {
-    FIXME("fromprocess %p, fromaddress %p, toprocess %p, toaddress %p, bufsize %lu, mode %d, copied %p stub.\n",
+    NTSTATUS status;
+    HANDLE fromhandle, tohandle;
+
+    TRACE("fromprocess %p, fromaddress %p, toprocess %p, toaddress %p, bufsize %lu, mode %d, copied %p.\n",
             fromprocess, fromaddress, toprocess, toaddress, bufsize, mode, copied);
 
-    *copied = 0;
-    return STATUS_NOT_IMPLEMENTED;
+    if (!bufsize)
+    {
+        *copied = 0;
+        return STATUS_SUCCESS;
+    }
+
+    status = ObOpenObjectByPointer( fromprocess, 0, NULL, PROCESS_ALL_ACCESS, NULL, mode, &fromhandle );
+    if (status)
+    {
+        *copied = 0;
+        return status;
+    }
+
+    status = ObOpenObjectByPointer( toprocess, 0, NULL, PROCESS_ALL_ACCESS, NULL, mode, &tohandle );
+    if (status)
+    {
+        NtClose( fromhandle );
+        *copied = 0;
+        return status;
+    }
+
+    SERVER_START_REQ( transfer_process_memory )
+    {
+        req->src_handle     = wine_server_obj_handle( fromhandle );
+        req->src_addr       = wine_server_client_ptr( fromaddress );
+        req->dst_handle     = wine_server_obj_handle( tohandle );
+        req->dst_addr       = wine_server_client_ptr( toaddress );
+        req->size           = bufsize;
+        req->allow_partial  = 1;
+        status  = wine_server_call( req );
+        *copied = reply->copied;
+    }
+    SERVER_END_REQ;
+
+    NtClose( tohandle );
+    NtClose( fromhandle );
+
+    if (status == STATUS_NOT_IMPLEMENTED)
+        FIXME("stub!");
+
+    return status;
 }
 
 /*********************************************************************

@@ -172,6 +172,47 @@ int write_process_memory( struct process *process, client_ptr_t ptr, size_t size
     return 0;
 }
 
+/* transfer data from one process's memory space to another's */
+int transfer_process_memory( struct process *src_process, client_ptr_t src_ptr, struct process *dst_process, client_ptr_t dst_ptr, size_t *size, int allow_partial )
+{
+    ssize_t ret;
+    int src_fd, dst_fd;
+    char *scratch_space;
+
+    if ((off_t)ptr != ptr)
+    {
+        set_error( STATUS_ACCESS_DENIED );
+        return 0;
+    }
+
+    scratch_space = mem_alloc( size );
+
+    if ((src_fd = open_proc_as( src_process, O_RDONLY )) == -1)
+        return 0;
+    if ((dst_fd = open_proc_as( dst_process, O_WRONLY )) == -1)
+    {
+        close( src_fd );
+        return 0;
+    }
+
+    ret = pread( src_fd, scratch_space, size, (off_t)src_ptr );
+    if (ret == -1 || (!allow_partial && (size_t)ret != size)) goto error;
+
+    ret = pwrite( dst_fd, scratch_space, (size_t)ret, (off_t)dst_ptr );
+    if (ret == -1 || (!allow_partial && (size_t)ret != size)) goto error;
+
+    close( dst_fd );
+    close( src_fd );
+    *size = ret;
+    return 1;
+error:
+    if (ret == -1) file_set_error();
+    else set_error( STATUS_ACCESS_VIOLATION );
+    close( dst_fd );
+    close( src_fd );
+    return 0;
+}
+
 /* retrieve an LDT selector entry */
 void get_selector_entry( struct thread *thread, int entry, unsigned int *base,
                          unsigned int *limit, unsigned char *flags )

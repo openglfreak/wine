@@ -413,7 +413,7 @@ int read_process_memory( struct process *process, client_ptr_t ptr, data_size_t 
 /* len is the total size (in ints) */
 static int check_process_write_access( struct thread *thread, long *addr, data_size_t len )
 {
-    int page = get_page_size() / sizeof(int);
+    int page = get_page_size() / sizeof(long);
 
     for (;;)
     {
@@ -510,6 +510,264 @@ int write_process_memory( struct process *process, client_ptr_t ptr, data_size_t
     done:
         resume_after_ptrace( thread );
     }
+    return ret;
+}
+
+static int try_procmem_transfer( unsigned int src_pid, off_t src_ptr, unsigned int dst_pid, off_t dst_ptr,
+                                 size_t *size, int allow_partial, char *scratch_space )
+{
+    char procmem[32];
+    int src_fd, dst_fd;
+    size_t read = 0, written = 0;
+
+    /* if there is no data to transfer, return success */
+    if (*size == 0)
+        return 1;
+
+    /* open the source process's memory */
+    sprintf( procmem, "/proc/%u/mem", src_pid );
+    if ((src_fd = open( procmem, (dst_pid == src_pid ? O_RDWR : O_RDONLY) )) == -1)
+        return 0;
+
+    /* open the destination process's memory */
+    if (dst_pid == src_pid)
+        dst_fd = src_fd;
+    else
+    {
+        sprintf( procmem, "/proc/%u/mem", dst_pid );
+        if ((dst_fd = (dst_pid == src_pid ? src_fd : open( procmem, O_WRONLY ))) == -1)
+        {
+            close( src_fd );
+            return 0;
+        }
+    }
+
+    /* read the data from the source process */
+    while (read < *size)
+    {
+        ssize_t r = pread( src_fd, scratch_space + read, *size - read, src_ptr );
+        if (r == 0 || (r == -1 && errno == EIO)) break;
+        if (r == -1)
+        {
+            if (src_fd != dst_fd) close( src_fd );
+            close( dst_fd );
+            return 0;
+        }
+        read += (size_t)r;
+    }
+    if (src_fd != dst_fd) close( src_fd );
+    if (!allow_partial && read != *size)
+    {
+        close( dst_fd );
+        return 0;
+    }
+
+    /* write the data to the destination process */
+    while (written < read)
+    {
+        ssize_t r = pwrite( dst_fd, scratch_space + written, read - written, dst_ptr );
+        if (r == 0 || (r == -1 && errno == EIO)) break;
+        if (r == -1)
+        {
+            /* this shouldn't happen - but what should we do here in case of !allow_partial? */
+            close( dst_fd );
+            return 0;
+        }
+        written += (size_t)r;
+    }
+    close( dst_fd );
+    if (!allow_partial && written != *size) /* should never happen, could break things otherwise */
+        return 0;
+
+    *size = written;
+    return 1;
+}
+
+static int try_ptrace_transfer( struct thread *src_thread, void* src_ptr, struct thread *dst_thread,
+                                void* dst_ptr, size_t *size, int allow_partial, char *scratch_space )
+{
+    unsigned int first_offset, last_offset;
+    unsigned long *addr;
+    size_t len;
+    unsigned long data, first_mask, last_mask;
+    size_t read, written;
+    char *p;
+
+    /* if there is no data to transfer, return success */
+    if (*size == 0)
+        return 1;
+
+    first_offset = (size_t)src_ptr % sizeof(long);
+    last_offset = (*size + first_offset) % sizeof(long);
+    if (!last_offset) last_offset = sizeof(long);
+
+    addr = (unsigned long*)((char*)src_ptr - first_offset);
+    len = (*size + first_offset + sizeof(long) - 1) / sizeof(long);
+
+    p = scratch_space;
+
+    /* first word is special */
+    if (len > 1)
+    {
+        if (read_thread_long( src_thread, addr++, &data ) == -1) goto write;
+        memcpy( p, (char *)&data + first_offset, sizeof(long) - first_offset );
+        p += sizeof(long) - first_offset;
+        first_offset = 0;
+        len--;
+    }
+
+    while (len > 1)
+    {
+        if (read_thread_long( src_thread, addr++, &data ) == -1) goto write;
+        memcpy( p, &data, sizeof(long) );
+        p += sizeof(long);
+        len--;
+    }
+
+    /* last word is special too */
+    if (read_thread_long( src_thread, addr++, &data ) == -1) goto write;
+    memcpy( p, (char *)&data + first_offset, last_offset - first_offset );
+    p += last_offset - first_offset;
+
+write:
+    read = p - scratch_space;
+    p = scratch_space;
+    if (!allow_partial && read != *size) goto done;
+
+    first_offset = (size_t)dst_ptr % sizeof(long);
+    last_offset = (read + first_offset) % sizeof(long);
+    if (!last_offset) last_offset = sizeof(long);
+
+    addr = (unsigned long*)((char*)dst_ptr - first_offset);
+    len = (read + first_offset + sizeof(long) - 1) / sizeof(long);
+
+    /* compute the mask for the first long */
+    first_mask = ~0ul;
+    memset( &first_mask, 0, first_offset );
+    /* compute the mask for the last long */
+    last_mask = 0;
+    memset( &last_mask, 0xff, last_offset );
+
+    /* first word is special */
+    if (len > 1)
+    {
+        memcpy( (char *)&data + first_offset, p, sizeof(long) - first_offset );
+        if (write_thread_long( dst_thread, addr++, data, first_mask ) == -1) goto done;
+        p += sizeof(long) - first_offset;
+        first_offset = 0;
+        len--;
+    }
+    else last_mask &= first_mask;
+
+    while (len > 1)
+    {
+        memcpy( &data, p, sizeof(long) );
+        if (write_thread_long( dst_thread, addr++, data, ~0ul ) == -1) goto done;
+        p += sizeof(long);
+        len--;
+    }
+
+    /* last word is special too */
+    memcpy( (char *)&data + first_offset, p, last_offset - first_offset );
+    if (write_thread_long( dst_thread, addr, data, last_mask ) == -1) goto done;
+    p += last_offset - first_offset;
+
+done:
+    written = p - scratch_space;
+    if (!allow_partial && written != *size)
+        return 0;
+    *size = written;
+    return 1;
+}
+
+/* transfer data from one process's memory space to another's */
+int transfer_process_memory( struct process *src_process, client_ptr_t src_ptr, struct process *dst_process,
+                             client_ptr_t dst_ptr, data_size_t *size, int allow_partial )
+{
+    struct thread *src_thread = get_ptrace_thread( src_process );
+    struct thread *dst_thread = src_process == dst_process ? src_thread : get_ptrace_thread( dst_process );
+    void *scratch_space;
+    size_t tmp;
+    int ret = 0;
+
+    /* if there is no data to transfer, return success */
+    if (*size == 0)
+        return 1;
+
+    if (!src_thread || !dst_thread) return 0;
+
+    scratch_space = mem_alloc( *size );
+    if (!scratch_space)
+    {
+        set_error( STATUS_INSUFFICIENT_RESOURCES );
+        return 0;
+    }
+
+    if (!suspend_for_ptrace( src_thread ))
+        goto done;
+    if (dst_thread != src_thread && !suspend_for_ptrace( dst_thread ))
+    {
+        resume_after_ptrace( src_thread );
+        goto done;
+    }
+
+    if (!allow_partial)
+    {
+        unsigned int first_offset;
+        unsigned long *addr;
+        size_t len;
+
+        if ((client_ptr_t)(void*)dst_ptr != dst_ptr)
+        {
+            set_error( STATUS_ACCESS_DENIED );
+            goto resume;
+        }
+
+        first_offset = dst_ptr % sizeof(long);
+        addr = (unsigned long*)((char*)dst_ptr - first_offset);
+        len = (*size + first_offset + sizeof(long) - 1) / sizeof(long);
+
+        if (!check_process_write_access( dst_thread, (long*)addr, len ))
+        {
+            set_error( STATUS_ACCESS_DENIED );
+            goto resume;
+        }
+    }
+
+    /* /proc/pid/mem should be faster for large sizes */
+    if ((size_t)*size == *size && (off_t)src_ptr == src_ptr && (off_t)dst_ptr == dst_ptr && *size > 3)
+    {
+        tmp = (size_t)*size;
+        if (try_procmem_transfer( src_process->unix_pid, (off_t)src_ptr, dst_process->unix_pid,
+                                  (off_t)dst_ptr, &tmp, allow_partial, (char*)scratch_space ))
+        {
+            if (tmp != *size) set_error( STATUS_PARTIAL_COPY );
+            *size = tmp;
+            goto resume;
+        }
+    }
+
+    if ((size_t)*size == *size && (client_ptr_t)(void*)src_ptr == src_ptr && (client_ptr_t)(void*)dst_ptr == dst_ptr)
+    {
+        tmp = (size_t)*size;
+        if (try_ptrace_transfer( src_thread, (void*)src_ptr, dst_thread, (void*)dst_ptr, &tmp,
+                                 allow_partial, (char*)scratch_space ))
+        {
+            if (tmp != *size) set_error( STATUS_PARTIAL_COPY );
+            *size = tmp;
+            goto resume;
+        }
+    }
+
+    *size = 0;
+    set_error( STATUS_ACCESS_DENIED );
+
+resume:
+    if (dst_thread != src_thread)
+        resume_after_ptrace( dst_thread );
+    resume_after_ptrace( src_thread );
+done:
+    free( scratch_space );
     return ret;
 }
 

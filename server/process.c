@@ -1540,6 +1540,30 @@ DECL_HANDLER(write_process_memory)
     }
 }
 
+/* transfer data from one process's address space to another's */
+DECL_HANDLER(transfer_process_memory)
+{
+    struct process *src_process, *dst_process;
+
+    if (!(src_process = get_process_from_handle( req->src_handle, PROCESS_VM_READ )))
+        return;
+    if (!(dst_process = get_process_from_handle( req->dst_handle, PROCESS_VM_WRITE )))
+    {
+        release_object( src_process );
+        return;
+    }
+
+    reply->copied = req->size;
+    if (req->size)
+        transfer_process_memory( src_process, req->src_addr, dst_process, req->dst_addr,
+                                 &reply->copied, req->allow_partial );
+    else
+        set_error( STATUS_INVALID_PARAMETER );
+
+    release_object( dst_process );
+    release_object( src_process );
+}
+
 /* retrieve the process idle event */
 DECL_HANDLER(get_process_idle_event)
 {
