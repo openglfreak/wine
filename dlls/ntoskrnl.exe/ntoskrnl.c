@@ -3995,19 +3995,29 @@ NTSTATUS WINAPI MmCopyVirtualMemory(PEPROCESS fromprocess, void *fromaddress, PE
         return STATUS_SUCCESS;
     }
 
-    status = ObOpenObjectByPointer( fromprocess, 0, NULL, PROCESS_ALL_ACCESS, NULL, mode, &fromhandle );
-    if (status)
+    if (fromaddress > MmSystemRangeStart)
+        fromhandle = GetCurrentProcess();
+    else
     {
-        *copied = 0;
-        return status;
+        status = ObOpenObjectByPointer( fromprocess, 0, NULL, PROCESS_ALL_ACCESS, NULL, mode, &fromhandle );
+        if (status)
+        {
+            *copied = 0;
+            return status;
+        }
     }
 
-    status = ObOpenObjectByPointer( toprocess, 0, NULL, PROCESS_ALL_ACCESS, NULL, mode, &tohandle );
-    if (status)
+    if (toaddress > MmSystemRangeStart)
+        tohandle = GetCurrentProcess();
+    else
     {
-        NtClose( fromhandle );
-        *copied = 0;
-        return status;
+        status = ObOpenObjectByPointer( toprocess, 0, NULL, PROCESS_ALL_ACCESS, NULL, mode, &tohandle );
+        if (status)
+        {
+            NtClose( fromhandle );
+            *copied = 0;
+            return status;
+        }
     }
 
     SERVER_START_REQ( transfer_process_memory )

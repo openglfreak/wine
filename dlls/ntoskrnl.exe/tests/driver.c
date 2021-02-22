@@ -2036,7 +2036,7 @@ static void test_process_memory(const struct test_input *test_input)
                 buffer, sizeof(buffer), KernelMode, &size);
         ok(status == STATUS_SUCCESS, "Got unexpected status %#x.\n", status);
         ok(size == sizeof(buffer), "Got unexpected size %lu.\n", size);
-        todo_wine ok(!strcmp(buffer, teststr), "Got unexpected test string.\n");
+        ok(!strcmp(buffer, teststr), "Got unexpected test string.\n");
     }
     else
     {
